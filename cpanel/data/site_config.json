@@ -1,0 +1,182 @@
+{
+  "adminPassword": "admin",
+  "logoUrl": "",
+  "lagosBridgeUrl": "https://images.unsplash.com/photo-1599839352727-4c749b5c2253?q=80&w=1200&auto=format&fit=crop",
+  "home_hero_title": "Transforming Africa.",
+  "home_hero_title_color": "#141b77",
+  "home_hero_title_highlight_color": "#ef4444",
+  "home_hero_subtitle": "Building Systems. Empowering People.",
+  "home_hero_desc": "We design, build and scale innovative ventures and digital solutions that solve real problems and drive sustainable economic transformation across Africa.",
+  "about_hero_title": "Empowering Innovation, Driving Impact.",
+  "about_hero_desc": "We are a dedicated venture builder and digital transformation architect driving industrial-strength technology ecosystems.",
+  "about_mission_title": "Our Core Mission",
+  "about_mission_text": "Across Africa, the challenge is rarely a lack of ideas or raw entrepreneurial talent. It is the deep friction of execution\u2014regulatory compliance, high software engineering costs, and the absence of proven templates for corporate digital modernization.\n\nMetaspace Consulting was founded to serve as that foundational scaffold. Whether we are co-founding spin-offs like Ugbekun in education or advising public offices on startup policies, our methodologies are rigorous, evidence-based, and focused entirely on measurable, lasting outcomes.",
+  "what_we_do_title": "Architecting African Technology Infrastructure.",
+  "what_we_do_desc": "We design and support long-term systems to empower organizations and communities. Explore our 4 main corporate pillars.",
+  "whatsapp_number": "+2348123456789",
+  "footer_tagline": "Building Systems. Empowering People. Transforming Africa.",
+  "footer_desc": "We design, build and scale innovative ventures and digital solutions that solve real problems and drive sustainable economic transformation across Africa.",
+  "footer_email": "info@metaspaceconsulting.com",
+  "footer_phone": "+234 812 345 6789",
+  "footer_address": "Benin City, Edo State, Nigeria",
+  "footer_linkedin": "https://linkedin.com/company/metaspace",
+  "footer_twitter": "https://twitter.com/metaspace",
+  "footer_facebook": "https://facebook.com/metaspace",
+  "footer_instagram": "https://instagram.com/metaspace",
+  "ventures": [
+    {
+      "id": "ugbekun",
+      "name": "Ugbekun",
+      "tagline": "Smart School Management System",
+      "description": "A comprehensive digital school administration and smart payment platform that streamlines operations, tracking student records, automated fee collection, and enhances communication between teachers and parents.",
+      "fullDetails": "Ugbekun is designed to address the deep operational inefficiencies in the African educational sector. By integrating academic management, staff scheduling, automated invoice dispatching, and parent-teacher feedback portals, it saves schools up to 40% in administrative hours. Most importantly, its secure payment gateway allows cashless, instant fee payments with flexible installments, significantly reducing school fee default rates.",
+      "iconName": "school",
+      "color": "from-blue-600 to-indigo-700",
+      "stats": [
+        { "label": "Schools Enrolled", "value": "45+" },
+        { "label": "Students Tracked", "value": "12,000+" },
+        { "label": "Cashless Payments", "value": "$320K+" }
+      ],
+      "impactPoints": [
+        "99% automated payment accuracy reducing cash handling risks.",
+        "Instant SMS academic updates sent directly to parents' mobile phones.",
+        "Custom curriculum mapping compliant with national and international education boards."
+      ],
+      "founderQuote": "Ugbekun bridges the gap between administrators, parents, and teachers, turning educational logistics into a seamless experience."
+    },
+    {
+      "id": "oghowa",
+      "name": "Oghowa Accelerator",
+      "tagline": "Empowering Next-Gen Startups",
+      "description": "An elite incubation and acceleration platform helping early-stage African tech startups go from prototype to product-market fit with access to mentors, seed funding, and global distribution.",
+      "fullDetails": "Oghowa Accelerator is Metaspace's ecosystem catalyst. Through structured 12-week cohorts, startups receive intense technical, financial, and legal masterclasses, paired with direct hands-on product design. We don't just advise; we co-build. Every cohort culminates in a Demo Day, exposing startups to over 50 regional and international venture capitalists, angel networks, and strategic corporate partners.",
+      "iconName": "rocket",
+      "color": "from-red-600 to-pink-700",
+      "stats": [
+        { "label": "Cohort Graduates", "value": "24" },
+        { "label": "Mentors Active", "value": "35+" },
+        { "label": "Total Seed Raised", "value": "$1.8M" }
+      ],
+      "impactPoints": [
+        "Interactive workshops covering technology architecture, taxation, and cap table design.",
+        "Lifetime integration into the global South-South startup development network.",
+        "Dedicated workspace and high-speed internet resources at our partner technology parks."
+      ],
+      "founderQuote": "Oghowa is more than an incubator. It's an engine co-creating the next generation of African unicorns right from the grassroots."
+    },
+    {
+      "id": "eduride",
+      "name": "EduRide",
+      "tagline": "Eco-Friendly Campus Logistics",
+      "description": "A micro-mobility and ride-sharing service optimizing daily commutes and campus transit for students and academic staff using low-carbon light vehicles and proprietary routing software.",
+      "fullDetails": "EduRide tackles the severe logistics and transportation friction on expanding university campuses and tech hubs. By utilizing tracked, fuel-efficient light vehicles and an on-demand routing app, we cut commute times by 50% and keep campus logistics safe, cheap, and environment-friendly. The app features digital ticketing and offline ride authentication to fit low-connectivity environments.",
+      "iconName": "bus",
+      "color": "from-amber-600 to-orange-700",
+      "stats": [
+        { "label": "Active Commuters", "value": "5,500+" },
+        { "label": "Rides Completed", "value": "82,000+" },
+        { "label": "Carbon Saved", "value": "14 Tons" }
+      ],
+      "impactPoints": [
+        "On-demand dispatching algorithms maximizing route utilization.",
+        "Highly competitive cashless commuter subscriptions.",
+        "Student driver employment program empowering campus youth."
+      ],
+      "founderQuote": "EduRide ensures students and faculty get to their classes on-time and cost-effectively, fueling educational productivity."
+    },
+    {
+      "id": "cyona",
+      "name": "Cyona Medicare",
+      "tagline": "24/7 Tele-Triage & Eldercare",
+      "description": "A tailored health-tech ecosystem delivering emergency tele-triage, medical record management, and specialized home nurse visits directly to senior citizens and families.",
+      "fullDetails": "Cyona Medicare was founded to support Africa's aging population with clinical precision. Through emergency dial-in hotlines and smart tele-triage platforms, we match senior citizens with registered local healthcare practitioners. For households needing ongoing assistance, Cyona handles recurring physical doctor visits and maintains full, tamperproof digital health records.",
+      "iconName": "heart",
+      "color": "from-teal-600 to-emerald-700",
+      "stats": [
+        { "label": "Registered Nurses", "value": "120+" },
+        { "label": "Happy Families", "value": "650+" },
+        { "label": "Response Time", "value": "<15 min" }
+      ],
+      "impactPoints": [
+        "24/7 dedicated medical emergency dispatch and remote triage assistance.",
+        "Personalized healthcare plans developed in collaboration with top regional hospitals.",
+        "Direct digital medical records that can be instantly shared with clinical specialists."
+      ],
+      "founderQuote": "Eldercare in Africa is deeply personal. Cyona ensures our parents receive the dignity, warmth, and clinical precision they deserve."
+    }
+  ],
+  "services": [
+    {
+      "id": "studio",
+      "title": "Venture Design Studio",
+      "iconName": "studio",
+      "shortDesc": "We design, build, and scale innovative startups to solve Africa's most critical systemic challenges.",
+      "longDesc": "As a premier venture builder, we don't just invest capital; we invest ourselves. We combine deep market research, software engineering brilliance, and local distribution networks to ideate, prototype, launch, and fund standalone companies from scratch.",
+      "keyFeatures": [
+        "Rigorous problem validation and commercial viability modeling.",
+        "Rapid high-fidelity prototyping and agile MVP development.",
+        "Recruiting stellar C-suite talent to lead launched spin-offs.",
+        "Initial seed funding and investor match-making services."
+      ],
+      "caseStudy": {
+        "title": "Spinning out Ugbekun",
+        "description": "Identified cash-handling leaks in Edo State secondary schools. Co-designed Ugbekun and turned it into an independent venture, achieving $320K in transacted volume within 9 months.",
+        "metric": "9 Months to Scale"
+      }
+    },
+    {
+      "id": "transform",
+      "title": "Digital Transformation",
+      "iconName": "transform",
+      "shortDesc": "We help enterprises, legacies, and public institutions modernize with cutting-edge software and cloud systems.",
+      "longDesc": "Legacy operations waste invaluable human capacity. We partner with established organizations to audit their workflows, design responsive internal tools, migrate complex architectures to secure cloud servers, and retrain teams on automated digital practices.",
+      "keyFeatures": [
+        "Comprehensive digital capability auditing and operational roadmap design.",
+        "Legacy software refactoring and high-availability cloud migration (AWS, GCP).",
+        "Custom CRM, ERP, and payment gateway integration.",
+        "Data-analytics dashboards representing real-time organizational KPIs."
+      ],
+      "caseStudy": {
+        "title": "State-wide Education Auditing",
+        "description": "Partnered with local school boards to migrate educational rosters from paper ledgers to secure databases, optimizing resource planning across hundreds of schools.",
+        "metric": "100% Rosters Digitized"
+      }
+    },
+    {
+      "id": "ecosystem",
+      "title": "Innovation Ecosystem Builder",
+      "iconName": "ecosystem",
+      "shortDesc": "We construct and execute standard startup accelerators, digital hubs, and talent pipelines.",
+      "longDesc": "Ecosystems grow when founders, capital, and mentorship collide effectively. We design and operate structured acceleration programs, technology hubs, and co-working spaces for sovereign sponsors, corporates, and developmental partners.",
+      "keyFeatures": [
+        "Designing high-impact curriculums custom-fitted to emerging markets.",
+        "Managing mentor networks consisting of seasoned global tech executives.",
+        "Coordinating demographic-specific developer bootcamps and tech meetups.",
+        "Structuring venture-capital readiness clinics and pitch simulators."
+      ],
+      "caseStudy": {
+        "title": "The Oghowa Initiative",
+        "description": "Built the Oghowa Accelerator hub, providing 24 startups with mentorship, structural workshops, and bringing international angel investors directly to Nigeria's South-South region.",
+        "metric": "$1.8M Raised by Cohorts"
+      }
+    },
+    {
+      "id": "advisory",
+      "title": "Strategy & Advisory",
+      "iconName": "advisory",
+      "shortDesc": "We advise sovereign leadership, corporations, and startups on technology regulations and operational strategy.",
+      "longDesc": "Policy, technology, and commercial outcomes are deeply intertwined. We analyze markets and compile intelligence reports to help governments implement robust tech policies and corporates identify expansion frameworks.",
+      "keyFeatures": [
+        "National and regional startup act design and legal consulting.",
+        "Deep tech landscape research and policy brief compilations.",
+        "Corporate venture capital (CVC) setup and fund deployment advisory.",
+        "Operational process scaling frameworks."
+      ],
+      "caseStudy": {
+        "title": "Startup Act Consultation",
+        "description": "Provided strategic briefs and drafting committees with data supporting sovereign startup legislations, streamlining registration processes.",
+        "metric": "Policy Draft Supported"
+      }
+    }
+  ]
+}

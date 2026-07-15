@@ -1,0 +1,11 @@
+# Metaspace Consulting - Apache Configuration
+# Set the default index file priority to load PHP first
+DirectoryIndex index.php index.html index.htm
+
+# Prevent directory browsing for security
+Options -Indexes
+
+# Enable compression to speed up loading on shared cPanel hosting
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>

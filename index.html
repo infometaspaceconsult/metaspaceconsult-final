@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metaspace Consulting | Building Systems. Empowering People.</title>
+    <script>
+      // Defensive guards for sandboxed iframe environments & chrome extension injections
+      (function() {
+        // 1. Guard matchMedia and its event listener registration methods
+        try {
+          if (window.matchMedia) {
+            const originalMatchMedia = window.matchMedia;
+            window.matchMedia = function(query) {
+              try {
+                const mql = originalMatchMedia.call(window, query);
+                if (mql) {
+                  if (typeof mql.addListener !== 'function') {
+                    mql.addListener = function(cb) {
+                      if (mql.addEventListener) mql.addEventListener('change', cb);
+                    };
+                  }
+                  if (typeof mql.removeListener !== 'function') {
+                    mql.removeListener = function(cb) {
+                      if (mql.removeEventListener) mql.removeEventListener('change', cb);
+                    };
+                  }
+                }
+                return mql;
+              } catch (e) {
+                return {
+                  matches: false,
+                  media: query,
+                  onchange: null,
+                  addListener: function() {},
+                  removeListener: function() {},
+                  addEventListener: function() {},
+                  removeEventListener: function() {},
+                  dispatchEvent: function() { return false; }
+                };
+              }
+            };
+          } else {
+            window.matchMedia = function(query) {
+              return {
+                matches: false,
+                media: query,
+                onchange: null,
+                addListener: function() {},
+                removeListener: function() {},
+                addEventListener: function() {},
+                removeEventListener: function() {},
+                dispatchEvent: function() { return false; }
+              };
+            };
+          }
+        } catch (e) {
+          console.warn("MatchMedia guard error", e);
+        }
+
+        // 2. Guard chrome runtime / extension injection points
+        try {
+          if (!window.chrome) {
+            window.chrome = {};
+          }
+          if (!window.chrome.runtime) {
+            window.chrome.runtime = {
+              emit: function() {},
+              addListener: function() {},
+              removeListener: function() {},
+              sendMessage: function() {},
+              connect: function() {}
+            };
+          } else {
+            if (typeof window.chrome.runtime.emit !== 'function') {
+              try {
+                window.chrome.runtime.emit = function() {};
+              } catch (e) {
+                // If read-only, define property
+                Object.defineProperty(window.chrome.runtime, 'emit', {
+                  value: function() {},
+                  writable: true,
+                  configurable: true
+                });
+              }
+            }
+            if (typeof window.chrome.runtime.addListener !== 'function') {
+              try {
+                window.chrome.runtime.addListener = function() {};
+              } catch (e) {
+                Object.defineProperty(window.chrome.runtime, 'addListener', {
+                  value: function() {},
+                  writable: true,
+                  configurable: true
+                });
+              }
+            }
+          }
+          
+          if (!window.chrome.webview) {
+            window.chrome.webview = {
+              addEventListener: function() {},
+              removeEventListener: function() {},
+              postMessage: function() {}
+            };
+          }
+        } catch (e) {
+          console.warn("Chrome runtime guard error", e);
+        }
+
+        // 3. Gracefully swallow benign environment-specific console errors
+        try {
+          window.addEventListener('error', function(event) {
+            if (event && event.message) {
+              const msg = event.message.toLowerCase();
+              if (
+                msg.includes('emit') || 
+                msg.includes('addlistener') || 
+                msg.includes('chrome-extension') || 
+                msg.includes('webview') ||
+                msg.includes('failed to connect to websocket')
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }
+          }, true);
+        } catch (e) {
+          console.warn("Error event listener guard error", e);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
