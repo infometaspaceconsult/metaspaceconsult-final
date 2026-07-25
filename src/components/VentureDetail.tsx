@@ -1,5 +1,5 @@
 import React from "react";
-import { X, ArrowRight, Star, TrendingUp, Sparkles, BookOpen, Heart, Rocket, Bus, ShieldAlert, CheckCircle } from "lucide-react";
+import { X, ArrowRight, Star, TrendingUp, Sparkles, BookOpen, Heart, Rocket, Bus, ShieldAlert, CheckCircle, ExternalLink } from "lucide-react";
 import { Venture } from "../types";
 
 interface VentureDetailProps {
@@ -131,10 +131,21 @@ export default function VentureDetail({ venture, onClose, onBookClick }: Venture
             </span>
           </div>
           
-          <div className="flex items-center space-x-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+            {venture.url && (
+              <a
+                href={venture.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-4 py-2.5 bg-brand-crimson hover:bg-red-800 text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1.5 shadow"
+              >
+                <span>Visit Official Site</span>
+                <ExternalLink size={12} />
+              </a>
+            )}
             <button
               onClick={() => onBookClick(venture.name)}
-              className="flex-1 sm:flex-initial px-5 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition"
+              className="w-full sm:w-auto px-4 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition flex items-center justify-center"
             >
               Book Venture Partnership
             </button>

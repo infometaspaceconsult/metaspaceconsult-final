@@ -47,9 +47,10 @@ export default function Footer({
   ];
 
   const defaultVenturesLinks = [
+    { label: "MetaGen Project", tab: "ventures" },
     { label: "Ugbekun Platform", tab: "ventures" },
     { label: "Oghowa Accelerator", tab: "ventures" },
-    { label: "EduRide Logistics", tab: "ventures" },
+    { label: "MyEduRide Logistics", tab: "ventures" },
     { label: "Cyona Medicare", tab: "ventures" }
   ];
 

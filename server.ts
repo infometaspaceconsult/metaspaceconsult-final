@@ -34,6 +34,31 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Helper for sending email notifications via Resend API
+async function sendResendNotification(subject: string, htmlContent: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return;
+  try {
+    const config = await getSiteConfig();
+    const recipient = config.footer_email || "info@metaspaceconsulting.com";
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        from: "Metaspace Consulting <onboarding@resend.dev>",
+        to: [recipient],
+        subject: subject,
+        html: htmlContent
+      })
+    });
+  } catch (err) {
+    console.warn("Resend email notification failed:", err);
+  }
+}
+
 async function startServer() {
   // Initialize Database (MySQL pool or Local file fallback)
   await initDatabase();
@@ -177,6 +202,20 @@ Tone and Style:
       };
 
       await addConsultation(newConsultation);
+
+      // Trigger email notification via Resend
+      sendResendNotification(
+        `New Consultation Booking: ${name} (${service})`,
+        `<h2>New Consultation Request</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Organization:</strong> ${organization || "Independent"}</p>
+        <p><strong>Sector:</strong> ${sector || "N/A"}</p>
+        <p><strong>Service Pillar:</strong> ${service}</p>
+        <p><strong>Message:</strong></p>
+        <blockquote style="background:#f9f9f9;padding:12px;border-left:4px solid #141b77;">${message}</blockquote>`
+      );
+
       res.status(201).json({ success: true, consultation: newConsultation });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -211,6 +250,18 @@ Tone and Style:
       };
 
       await addContactInquiry(newInquiry);
+
+      // Trigger email notification via Resend
+      sendResendNotification(
+        `New Contact Inquiry: ${subject} from ${name}`,
+        `<h2>New Contact Inquiry</h2>
+        <p><strong>Name:</strong> ${name}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+        <p><strong>Message:</strong></p>
+        <blockquote style="background:#f9f9f9;padding:12px;border-left:4px solid #ef4444;">${message}</blockquote>`
+      );
+
       res.status(201).json({ success: true, inquiry: newInquiry });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

@@ -63,9 +63,10 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
     { label: "Contact Us", tab: "contact" }
   ],
   footer_ventures_links: [
+    { label: "MetaGen Project", tab: "ventures" },
     { label: "Ugbekun Platform", tab: "ventures" },
     { label: "Oghowa Accelerator", tab: "ventures" },
-    { label: "EduRide Logistics", tab: "ventures" },
+    { label: "MyEduRide Logistics", tab: "ventures" },
     { label: "Cyona Medicare", tab: "ventures" }
   ],
   home_hero_title: "Transforming Africa.",
@@ -79,6 +80,28 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
   what_we_do_desc: "We design and support long-term systems to empower organizations and communities. Explore our 4 main corporate pillars.",
   ventures: [
     {
+      id: "metagen",
+      name: "MetaGen Project",
+      tagline: "Empowering Digital Leaders & Transformative Education",
+      description: "An initiative of Metaspace Consult promoting digital transformation for School Administrators, Teachers, and Students to cultivate the digital leaders of tomorrow.",
+      fullDetails: "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.\n\nOur Core Goals:\n• Enhance engagement & student achievement\n• Promote collaboration & communication across schools\n• Ensure equitable access to digital resources\n• Foster a thriving digital culture in educational ecosystems\n\nMetaGen offers customized digital solutions providing a curated selection of digital tools and ongoing support services to empower school administrators, educators, teachers, and students in leveraging technology effectively. Our approach prioritizes personalized support, seamless integration, and continuous improvement.\n\nMetaGen is committed to empowering schools with comprehensive digital human capital development solutions (training and retraining teachers, students, and administrators on digital transformative skills), ensuring that educators, students, and staff are equipped with the knowledge, skills, and mindset to thrive in a digital world.",
+      iconName: "sparkles",
+      color: "from-purple-600 to-indigo-800",
+      url: "https://www.metaspaceconsult.com/metagen",
+      stats: [
+        { label: "Won Awards", value: "3x" },
+        { label: "Schools Reached", value: "100+" },
+        { label: "Students Trained", value: "1,000+" },
+        { label: "Programs & Trainings", value: "50+" }
+      ],
+      impactPoints: [
+        "Comprehensive digital human capital development for teachers, students, and administrators.",
+        "Customized digital tools and support services tailored for Nigerian educational ecosystems.",
+        "Fostering digital culture, equitable access to resources, and enhanced collaboration."
+      ],
+      founderQuote: "MetaGen Project equips educators and students with the knowledge, skills, and mindset to lead Africa's digital transformation."
+    },
+    {
       id: "ugbekun",
       name: "Ugbekun",
       tagline: "Smart School Management System",
@@ -86,6 +109,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Ugbekun is designed to address the deep operational inefficiencies in the African educational sector. By integrating academic management, staff scheduling, automated invoice dispatching, and parent-teacher feedback portals, it saves schools up to 40% in administrative hours. Most importantly, its secure payment gateway allows cashless, instant fee payments with flexible installments, significantly reducing school fee default rates.",
       iconName: "school",
       color: "from-blue-600 to-indigo-700",
+      url: "https://www.metaspaceconsult.com/ugbekun",
       stats: [
         { label: "Schools Enrolled", value: "45+" },
         { label: "Students Tracked", value: "12,000+" },
@@ -106,6 +130,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Oghowa Accelerator is Metaspace's ecosystem catalyst. Through structured 12-week cohorts, startups receive intense technical, financial, and legal masterclasses, paired with direct hands-on product design. We don't just advise; we co-build. Every cohort culminates in a Demo Day, exposing startups to over 50 regional and international venture capitalists, angel networks, and strategic corporate partners.",
       iconName: "rocket",
       color: "from-red-600 to-pink-700",
+      url: "https://www.metaspaceconsult.com/oghowa",
       stats: [
         { label: "Cohort Graduates", value: "24" },
         { label: "Total Funding Raised", value: "$1.8M+" },
@@ -120,12 +145,13 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
     },
     {
       id: "eduride",
-      name: "EduRide",
+      name: "MyEduRide",
       tagline: "Safe, Reliable Student Logistics",
       description: "A transportation-tech solution modernizing school bus operations and logistics with live GPS tracking, verified background-checked drivers, and dynamic route optimization.",
-      fullDetails: "EduRide solves the daily anxiety of parent-student transportation logistics. Schools partner with us to optimize their transport fleet or outsource it entirely to our verified fleet. Our mobile app allows parents to see when their child is picked up, view real-time location mapping, and receive notifications upon arrival. Drivers undergo rigorous biometric vetting, security checks, and defensive driving certifications.",
+      fullDetails: "MyEduRide solves the daily anxiety of parent-student transportation logistics. Schools partner with us to optimize their transport fleet or outsource it entirely to our verified fleet. Our mobile app allows parents to see when their child is picked up, view real-time location mapping, and receive notifications upon arrival. Drivers undergo rigorous biometric vetting, security checks, and defensive driving certifications.",
       iconName: "bus",
       color: "from-cyan-600 to-teal-700",
+      url: "https://www.myeduride.com",
       stats: [
         { label: "Daily Safe Trips", value: "1,500+" },
         { label: "Active Buses", value: "80+" },
@@ -146,6 +172,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Cyona Medicare redefines wellness and eldercare across African cities. Our platform connects certified nurses, caregivers, and doctors with families seeking dedicated care for their aging loved ones. By combining physical visits with continuous smart-monitoring devices, we help prevent emergency crises, track vital metrics, and deliver prescription refills right to the patient's doorstep.",
       iconName: "heart",
       color: "from-rose-600 to-red-700",
+      url: "https://www.cynonamediccare.com",
       stats: [
         { label: "Registered Nurses", value: "120+" },
         { label: "Happy Families", value: "650+" },

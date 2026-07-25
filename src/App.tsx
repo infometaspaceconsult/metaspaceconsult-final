@@ -3,7 +3,7 @@ import {
   ArrowRight, BookOpen, Rocket, Bus, Heart, Globe, Cpu, Network, Award, 
   MapPin, Phone, Mail, CheckCircle, Sparkles, Send, ShieldCheck, HelpCircle, 
   ChevronRight, Calendar, ArrowUpRight, MessageSquare, GraduationCap, Clock, User,
-  Users, TrendingUp
+  Users, TrendingUp, ExternalLink
 } from "lucide-react";
 import { TabType, Venture, ServiceOffer, InsightPost } from "./types";
 import { VENTURES_DATA, SERVICES_DATA, INSIGHTS_DATA, LAGOS_BRIDGE_IMAGE, TEAM_MEMBERS } from "./data";
@@ -234,15 +234,15 @@ export default function App() {
           <div className="space-y-16 animate-in fade-in duration-300">
             
             {/* HERO SECTION - Lekki-Ikoyi Link Bridge shown on right */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-white via-gray-50/50 to-blue-50/20 pt-10 pb-16 md:py-20 lg:py-24">
+            <section className="relative overflow-hidden bg-gradient-to-br from-white via-gray-50/50 to-blue-50/20 py-12 md:py-24 lg:py-32 min-h-[85vh] md:min-h-[90vh] flex items-center w-full border-b border-gray-100">
               <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none" />
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+              <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 relative z-10">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
                   
                   {/* Left Hero Text Content */}
                   <div className="lg:col-span-7 space-y-6 text-left">
-                    <div className="inline-flex items-center space-x-2 bg-red-50 px-3 py-1.5 rounded-full border border-red-100">
-                      <span className="w-2 h-2 bg-brand-crimson rounded-full animate-pulse" />
+                    <div className="inline-flex items-center space-x-2 bg-red-50 px-3.5 py-1.5 rounded-full border border-red-100 shadow-sm">
+                      <span className="w-2.5 h-2.5 bg-brand-crimson rounded-full animate-pulse" />
                       <span className="font-display font-bold text-[10px] sm:text-xs uppercase tracking-widest text-brand-crimson">
                         {homeHeroSubtitle}
                       </span>
@@ -250,7 +250,7 @@ export default function App() {
 
                     <h1 
                       style={{ color: homeHeroTitleColor }}
-                      className="font-display font-black text-4xl sm:text-5xl md:text-6xl tracking-tight leading-[1.08]"
+                      className="font-display font-black text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tight leading-[1.03]"
                     >
                       {homeHeroTitle.includes("Africa") ? (
                         <>
@@ -261,42 +261,42 @@ export default function App() {
                       ) : homeHeroTitle}
                     </h1>
 
-                    <p className="font-sans text-xs sm:text-sm text-gray-600 max-w-xl leading-relaxed">
+                    <p className="font-sans text-base sm:text-lg text-gray-600 max-w-2xl leading-relaxed">
                       {homeHeroDesc}
                     </p>
 
-                    <div className="flex flex-col sm:flex-row gap-3 pt-3">
+                    <div className="flex flex-col sm:flex-row gap-3.5 pt-4">
                       <button
                         onClick={() => handleTabChange("ventures")}
-                        className="px-6 py-3 bg-brand-red hover:bg-brand-crimson text-white text-[11px] font-bold uppercase tracking-wider rounded-lg shadow-lg hover:shadow-xl transition-all duration-150 flex items-center justify-center space-x-2"
+                        className="px-8 py-4 bg-brand-red hover:bg-brand-crimson text-white text-[12px] font-bold uppercase tracking-wider rounded-xl shadow-lg hover:shadow-xl transition-all duration-150 flex items-center justify-center space-x-2"
                       >
                         <span>Explore Our Ventures</span>
-                        <ArrowRight size={14} />
+                        <ArrowRight size={16} />
                       </button>
                       <button
                         onClick={() => handleBookClick("Strategy & Advisory")}
-                        className="px-6 py-3 bg-white border border-gray-200 text-brand-blue hover:border-brand-blue text-[11px] font-bold uppercase tracking-wider rounded-lg transition-colors flex items-center justify-center space-x-2"
+                        className="px-8 py-4 bg-white border border-gray-200 text-brand-blue hover:border-brand-blue text-[12px] font-bold uppercase tracking-wider rounded-xl transition-colors flex items-center justify-center space-x-2 shadow-sm"
                       >
                         <span>Partner With Us</span>
-                        <ArrowRight size={14} className="text-brand-crimson" />
+                        <ArrowRight size={16} className="text-brand-crimson" />
                       </button>
                     </div>
                   </div>
 
                   {/* Right Hero Image Frame (Lagos Lekki Bridge) */}
                   <div className="lg:col-span-5 relative">
-                    <div className="absolute -inset-1.5 bg-gradient-to-tr from-brand-crimson to-brand-blue rounded-3xl blur-md opacity-25" />
-                    <div className="relative overflow-hidden rounded-2xl border border-gray-100 shadow-2xl h-[300px] sm:h-[400px] w-full">
+                    <div className="absolute -inset-2 bg-gradient-to-tr from-brand-crimson via-purple-600 to-brand-blue rounded-3xl blur-lg opacity-30 animate-pulse" />
+                    <div className="relative overflow-hidden rounded-3xl border border-gray-100 shadow-2xl h-[380px] sm:h-[520px] w-full">
                       <img 
                         src={lagosBridgeUrl} 
                         alt="Lagos Lekki Ikoyi Link Bridge Metaspace"
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-brand-blue/70 via-brand-blue/20 to-transparent flex flex-col justify-end p-5">
-                        <div className="backdrop-blur-md bg-white/10 border border-white/15 p-4 rounded-xl text-white">
-                          <p className="font-display font-bold text-xs tracking-wide">Benin City Headquarters</p>
-                          <p className="text-[10px] text-white/85 mt-0.5">Anchoring technology ecosystem infrastructure across Nigeria's South-South region.</p>
+                      <div className="absolute inset-0 bg-gradient-to-t from-brand-blue/85 via-brand-blue/30 to-transparent flex flex-col justify-end p-6 sm:p-8">
+                        <div className="backdrop-blur-md bg-white/10 border border-white/20 p-5 rounded-2xl text-white shadow-lg">
+                          <p className="font-display font-bold text-base tracking-wide">Benin City Headquarters</p>
+                          <p className="text-xs text-white/90 mt-1 leading-snug">Anchoring technology ecosystem infrastructure & digital transformation across Nigeria's South-South region.</p>
                         </div>
                       </div>
                     </div>
@@ -345,14 +345,14 @@ export default function App() {
                 </p>
               </div>
 
-              {/* 4 Ventures horizontal scroll or grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Ventures grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
                 {ventures.map((ven) => (
                   <div 
                     key={ven.id}
                     className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col h-full overflow-hidden group"
                   >
-                    <div className="p-6 flex-1 space-y-4 flex flex-col justify-between">
+                    <div className="p-5 flex-1 space-y-4 flex flex-col justify-between">
                       <div className="space-y-3">
                         <div className={`w-10 h-10 rounded-2xl bg-gradient-to-tr ${ven.color || "from-brand-blue to-brand-navy"} flex items-center justify-center shadow`}>
                           {getVentureIcon(ven.iconName, 18, "text-white")}
@@ -361,7 +361,7 @@ export default function App() {
                           <h3 className="font-display font-extrabold text-sm tracking-wide text-brand-blue">
                             {ven.name}
                           </h3>
-                          <p className="text-[10px] text-brand-crimson font-sans font-medium mt-0.5 uppercase tracking-wider">
+                          <p className="text-[10px] text-brand-crimson font-sans font-medium mt-0.5 uppercase tracking-wider line-clamp-1">
                             {ven.tagline}
                           </p>
                         </div>
@@ -370,13 +370,26 @@ export default function App() {
                         </p>
                       </div>
 
-                      <button
-                        onClick={() => handleVentureLearnMore(ven)}
-                        className="text-[11px] font-bold text-brand-blue hover:text-brand-crimson flex items-center space-x-1 transition w-fit pt-2 group-hover:translate-x-1"
-                      >
-                        <span>Learn More</span>
-                        <ArrowRight size={12} />
-                      </button>
+                      <div className="pt-2 flex flex-col gap-2">
+                        {ven.url && (
+                          <a
+                            href={ven.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-bold text-brand-crimson hover:text-red-800 flex items-center space-x-1 transition"
+                          >
+                            <span>Visit Official Site</span>
+                            <ExternalLink size={10} />
+                          </a>
+                        )}
+                        <button
+                          onClick={() => handleVentureLearnMore(ven)}
+                          className="text-[11px] font-bold text-brand-blue hover:text-brand-crimson flex items-center space-x-1 transition w-fit group-hover:translate-x-1"
+                        >
+                          <span>Learn More</span>
+                          <ArrowRight size={12} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -761,12 +774,25 @@ export default function App() {
                     </div>
 
                     <div className="pt-4 border-t border-gray-50 flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <button
-                        onClick={() => handleBookClick(`Partnership: ${ven.name}`)}
-                        className="w-full sm:w-auto px-5 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition"
-                      >
-                        Book Venture Partnership
-                      </button>
+                      <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+                        <button
+                          onClick={() => handleBookClick(`Partnership: ${ven.name}`)}
+                          className="w-full sm:w-auto px-5 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition"
+                        >
+                          Book Venture Partnership
+                        </button>
+                        {ven.url && (
+                          <a
+                            href={ven.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full sm:w-auto px-4 py-2.5 bg-brand-crimson hover:bg-red-800 text-white text-[11px] font-bold uppercase tracking-wider rounded-lg transition flex items-center justify-center gap-1.5 shadow"
+                          >
+                            <span>Visit Official Site</span>
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
                       <button
                         onClick={() => handleVentureLearnMore(ven)}
                         className="text-xs font-bold text-brand-crimson hover:underline"

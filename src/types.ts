@@ -6,8 +6,9 @@ export interface Venture {
   tagline: string;
   description: string;
   fullDetails: string;
-  iconName: "school" | "rocket" | "bus" | "heart";
+  iconName: "school" | "rocket" | "bus" | "heart" | "cpu" | "code" | "sparkles" | string;
   color: string;
+  url?: string;
   stats: { label: string; value: string }[];
   impactPoints: string[];
   founderQuote?: string;

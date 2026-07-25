@@ -342,6 +342,38 @@ export default function AdminDashboard() {
     setVentures(list);
   };
 
+  const handleAddVenture = () => {
+    const newV: Venture = {
+      id: "venture-" + Math.random().toString(36).substr(2, 6),
+      name: "New Venture",
+      tagline: "Venture Slogan",
+      description: "Brief overview of the new venture.",
+      fullDetails: "Detailed operational and architectural breakdown of this venture.",
+      iconName: "rocket",
+      color: "from-brand-blue to-brand-navy",
+      url: "https://www.metaspaceconsult.com",
+      stats: [
+        { label: "Active Users", value: "1,000+" },
+        { label: "Growth Rate", value: "45%" }
+      ],
+      impactPoints: [
+        "Scalable technology architecture.",
+        "Sustainable economic transformation."
+      ],
+      founderQuote: "Innovation driven by deep execution."
+    };
+    const updated = [...ventures, newV];
+    setVentures(updated);
+    handleSaveConfig({ ventures: updated });
+  };
+
+  const handleDeleteVenture = (index: number) => {
+    if (!window.confirm("Are you sure you want to remove this venture from the portfolio?")) return;
+    const updated = ventures.filter((_, i) => i !== index);
+    setVentures(updated);
+    handleSaveConfig({ ventures: updated });
+  };
+
   const handleUpdateServiceField = (index: number, key: keyof ServiceOffer, val: any) => {
     const list = [...services];
     list[index] = { ...list[index], [key]: val };
@@ -954,32 +986,50 @@ export default function AdminDashboard() {
           
           {/* FLAGSHIP VENTURES EDITOR */}
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-6">
-            <div className="border-b border-gray-50 pb-3 flex justify-between items-center">
+            <div className="border-b border-gray-50 pb-3 flex flex-wrap justify-between items-center gap-3">
               <div>
                 <h3 className="font-display font-bold text-sm text-brand-blue">
                   Flagship Ventures Portfolio Editor
                 </h3>
                 <p className="text-[11px] text-gray-400">
-                  Update name, taglines, and core descriptions for the 4 primary spin-offs.
+                  Update name, taglines, live URLs, and descriptions for your ventures portfolio.
                 </p>
               </div>
-              <button
-                onClick={() => handleSaveConfig({ ventures })}
-                className="px-4 py-2 bg-brand-crimson hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
-              >
-                <Save size={12} />
-                <span>Save Venture Changes</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleAddVenture}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
+                >
+                  <Plus size={12} />
+                  <span>Add Venture</span>
+                </button>
+                <button
+                  onClick={() => handleSaveConfig({ ventures })}
+                  className="px-4 py-2 bg-brand-crimson hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
+                >
+                  <Save size={12} />
+                  <span>Save Venture Changes</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {ventures.map((v, idx) => (
-                <div key={v.id} className="p-5 bg-gray-50/50 border border-gray-100 rounded-2xl space-y-3.5">
-                  <div className="flex items-center space-x-2">
-                    <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[10px] font-black">
-                      {idx + 1}
-                    </span>
-                    <span className="text-xs font-black text-brand-blue uppercase">Venture ID: {v.id}</span>
+                <div key={v.id} className="p-5 bg-gray-50/50 border border-gray-100 rounded-2xl space-y-3.5 relative">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="w-5 h-5 rounded-full bg-brand-blue text-white flex items-center justify-center text-[10px] font-black">
+                        {idx + 1}
+                      </span>
+                      <span className="text-xs font-black text-brand-blue uppercase">Venture ID: {v.id}</span>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteVenture(idx)}
+                      className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded transition"
+                      title="Remove venture"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1001,6 +1051,17 @@ export default function AdminDashboard() {
                         className="px-3 py-1.5 text-xs bg-white border border-gray-200 focus:border-brand-blue rounded outline-none"
                       />
                     </div>
+                  </div>
+
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">Official Venture Website URL</label>
+                    <input
+                      type="text"
+                      value={v.url || ""}
+                      placeholder="e.g. https://www.metaspaceconsult.com/metagen"
+                      onChange={(e) => handleUpdateVentureField(idx, "url", e.target.value)}
+                      className="px-3 py-1.5 text-xs bg-white border border-gray-200 focus:border-brand-blue rounded outline-none text-brand-blue font-medium"
+                    />
                   </div>
 
                   <div className="flex flex-col space-y-1">
