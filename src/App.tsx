@@ -64,7 +64,21 @@ export default function App() {
     try {
       const d = await apiFetchSiteConfig();
       if (d) {
-        if (d.ventures) setVentures(d.ventures);
+        if (d.ventures && Array.isArray(d.ventures)) {
+          let loaded = d.ventures;
+          const hasMetagen = loaded.some((v: Venture) => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+          if (!hasMetagen) {
+            loaded = [VENTURES_DATA[0], ...loaded];
+          } else {
+            loaded = loaded.map((v: Venture) => {
+              if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
+                return VENTURES_DATA[0];
+              }
+              return v;
+            });
+          }
+          setVentures(loaded);
+        }
         if (d.services) setServices(d.services);
         if (d.teamMembers) setTeamMembers(d.teamMembers);
         if (d.insights) setInsights(d.insights);

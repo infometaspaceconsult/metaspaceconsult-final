@@ -20,6 +20,74 @@ function get_cfg($key, $default = '') {
 }
 
 $ventures = get_cfg('ventures', []);
+$defaultMetagen = [
+    'id' => 'metagen',
+    'name' => 'MetaGen Project',
+    'tagline' => 'Empowering Digital Leaders & Transformative Education',
+    'description' => 'An initiative of Metaspace Consult promoting digital transformation for School Administrators, Teachers, and Students.',
+    'fullDetails' => "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.",
+    'iconName' => 'sparkles',
+    'color' => 'from-purple-600 to-indigo-800',
+    'url' => 'https://www.metaspaceconsult.com/metagen',
+    'stats' => [
+        ['label' => 'Won Awards', 'value' => '3x'],
+        ['label' => 'Schools Reached', 'value' => '100+'],
+        ['label' => 'Students Trained', 'value' => '1,000+'],
+        ['label' => 'Programs & Trainings', 'value' => '50+']
+    ]
+];
+
+if (empty($ventures)) {
+    $ventures = [
+        $defaultMetagen,
+        [
+            'id' => 'ugbekun',
+            'name' => 'Ugbekun',
+            'tagline' => 'Smart School Management System',
+            'description' => 'A smart school management platform that streamlines operations and enhances learning outcomes.',
+            'stats' => [['label' => 'Schools Enrolled', 'value' => '45+'], ['label' => 'Students Tracked', 'value' => '12,000+'], ['label' => 'Cashless Payments', 'value' => '$320K+']]
+        ],
+        [
+            'id' => 'oghowa',
+            'name' => 'Oghowa Accelerator',
+            'tagline' => 'Empowering Startups',
+            'description' => 'Empowering startups through intensive incubation, expert mentorship, and critical funding access.',
+            'stats' => [['label' => 'Cohort Graduates', 'value' => '24'], ['label' => 'Total Funding', 'value' => '$1.8M+'], ['label' => 'Survival Rate', 'value' => '92%']]
+        ],
+        [
+            'id' => 'eduride',
+            'name' => 'MyEduRide Logistics',
+            'tagline' => 'Safe Student Logistics',
+            'description' => 'Improving student transportation and school logistics with innovative tracking technology.',
+            'stats' => [['label' => 'Daily Safe Trips', 'value' => '1,500+'], ['label' => 'Active Buses', 'value' => '80+'], ['label' => 'Logistics Saved', 'value' => '35%']]
+        ],
+        [
+            'id' => 'cyona',
+            'name' => 'Cyona Medicare',
+            'tagline' => 'Quality Elderly Care',
+            'description' => 'Enhancing elderly care services and making quality healthcare accessible.',
+            'stats' => [['label' => 'Registered Nurses', 'value' => '120+'], ['label' => 'Happy Families', 'value' => '650+'], ['label' => 'Response Time', 'value' => '<15 min']]
+        ]
+    ];
+} else {
+    $hasMetagen = false;
+    foreach ($ventures as &$v) {
+        if (isset($v['id']) && $v['id'] === 'metagen') { 
+            $v['name'] = 'MetaGen Project'; 
+            $hasMetagen = true; 
+            break; 
+        }
+        if (isset($v['name']) && stripos($v['name'], 'metagen') !== false) { 
+            $v['name'] = 'MetaGen Project'; 
+            $hasMetagen = true; 
+            break; 
+        }
+    }
+    unset($v);
+    if (!$hasMetagen) {
+        array_unshift($ventures, $defaultMetagen);
+    }
+}
 $services = get_cfg('services', []);
 $whatsapp = get_cfg('whatsapp_number', '+2348123456789');
 $cleanWa = preg_replace('/[^0-9]/', '', $whatsapp);

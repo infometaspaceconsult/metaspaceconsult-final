@@ -631,10 +631,28 @@ export async function getSiteConfig(): Promise<SiteConfig> {
       }
 
       // Add missing fields from default config to ensure type safety
-      return {
+      const mergedConfig: SiteConfig = {
         ...DEFAULT_SITE_CONFIG,
         ...config
       };
+
+      if (Array.isArray(mergedConfig.ventures)) {
+        const hasMetagen = mergedConfig.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+        if (!hasMetagen) {
+          mergedConfig.ventures = [DEFAULT_SITE_CONFIG.ventures[0], ...mergedConfig.ventures];
+        } else {
+          mergedConfig.ventures = mergedConfig.ventures.map(v => {
+            if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
+              return DEFAULT_SITE_CONFIG.ventures[0];
+            }
+            return v;
+          });
+        }
+      } else {
+        mergedConfig.ventures = DEFAULT_SITE_CONFIG.ventures;
+      }
+
+      return mergedConfig;
     } catch (err) {
       console.error("Error fetching site config from MySQL, using local file.", err);
     }
@@ -642,7 +660,28 @@ export async function getSiteConfig(): Promise<SiteConfig> {
 
   // Fallback to Local JSON file
   const fileData = readLocalFile();
-  return fileData.siteConfig;
+  const fileConfig: SiteConfig = {
+    ...DEFAULT_SITE_CONFIG,
+    ...(fileData.siteConfig || {})
+  };
+
+  if (Array.isArray(fileConfig.ventures)) {
+    const hasMetagen = fileConfig.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+    if (!hasMetagen) {
+      fileConfig.ventures = [DEFAULT_SITE_CONFIG.ventures[0], ...fileConfig.ventures];
+    } else {
+      fileConfig.ventures = fileConfig.ventures.map(v => {
+        if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
+          return DEFAULT_SITE_CONFIG.ventures[0];
+        }
+        return v;
+      });
+    }
+  } else {
+    fileConfig.ventures = DEFAULT_SITE_CONFIG.ventures;
+  }
+
+  return fileConfig;
 }
 
 // API EXPORTS: Update Site Config

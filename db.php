@@ -63,6 +63,13 @@ function auto_migrate_tables($pdo) {
         if ($stmt->fetchColumn() == 0) {
             $defaultVentures = [
                 [
+                    'name' => 'MetaGen Project',
+                    'tagline' => 'Empowering Digital Leaders & Transformative Education',
+                    'description' => 'An initiative of Metaspace Consult promoting digital transformation for School Administrators, Teachers, and Students.',
+                    'category' => 'EdTech & Digital Leadership',
+                    'icon' => 'sparkles'
+                ],
+                [
                     'name' => 'Ugbekun',
                     'tagline' => 'Smart School Management System',
                     'description' => 'A smart school management platform that streamlines operations and enhances learning outcomes.',
@@ -77,7 +84,7 @@ function auto_migrate_tables($pdo) {
                     'icon' => 'rocket_launch'
                 ],
                 [
-                    'name' => 'EduRide',
+                    'name' => 'MyEduRide Logistics',
                     'tagline' => 'Safe Student Logistics',
                     'description' => 'Improving student transportation and school logistics with innovative tracking technology.',
                     'category' => 'Logistics',
