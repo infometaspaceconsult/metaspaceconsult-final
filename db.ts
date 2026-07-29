@@ -418,45 +418,49 @@ export async function initDatabase() {
   }
 
   // Double check data directory exists
-  const dataDir = path.join(process.cwd(), "data");
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+  try {
+    const dataDir = path.join(process.cwd(), "data");
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
 
-  // Ensure JSON files exist and are seeded
-  if (!fs.existsSync(SITE_CONFIG_PATH)) {
-    fs.writeFileSync(SITE_CONFIG_PATH, JSON.stringify(DEFAULT_SITE_CONFIG, null, 2), "utf8");
-  }
-  if (!fs.existsSync(CONSULTATIONS_PATH)) {
-    const initConsults = [
-      {
-        id: "const-1",
-        name: "Dr. Alabi Johnson",
-        email: "alabi@edo-health.org",
-        organization: "Edo Health Initiative",
-        sector: "Healthcare",
-        service: "Digital Transformation",
-        message: "We want to digitize our primary healthcare operations in rural Edo state and are looking for a technical partner.",
-        createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        status: "scheduled",
-      },
-      {
-        id: "const-2",
-        name: "Amarachi Okafor",
-        email: "ceo@agrotech-africa.com",
-        organization: "AgroTech Africa",
-        sector: "Agriculture / Startups",
-        service: "Venture Design Studio",
-        message: "Interested in incubation through the Oghowa Accelerator for our seed stage supply-chain venture.",
-        createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-        status: "pending",
-      }
-    ];
-    fs.writeFileSync(CONSULTATIONS_PATH, JSON.stringify(initConsults, null, 2), "utf8");
-  }
-  if (!fs.existsSync(INQUIRIES_PATH)) {
-    fs.writeFileSync(INQUIRIES_PATH, JSON.stringify([], null, 2), "utf8");
-    console.log("Local file-based databases successfully initialized/seeded!");
+    // Ensure JSON files exist and are seeded
+    if (!fs.existsSync(SITE_CONFIG_PATH)) {
+      fs.writeFileSync(SITE_CONFIG_PATH, JSON.stringify(DEFAULT_SITE_CONFIG, null, 2), "utf8");
+    }
+    if (!fs.existsSync(CONSULTATIONS_PATH)) {
+      const initConsults = [
+        {
+          id: "const-1",
+          name: "Dr. Alabi Johnson",
+          email: "alabi@edo-health.org",
+          organization: "Edo Health Initiative",
+          sector: "Healthcare",
+          service: "Digital Transformation",
+          message: "We want to digitize our primary healthcare operations in rural Edo state and are looking for a technical partner.",
+          createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+          status: "scheduled",
+        },
+        {
+          id: "const-2",
+          name: "Amarachi Okafor",
+          email: "ceo@agrotech-africa.com",
+          organization: "AgroTech Africa",
+          sector: "Agriculture / Startups",
+          service: "Venture Design Studio",
+          message: "Interested in incubation through the Oghowa Accelerator for our seed stage supply-chain venture.",
+          createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+          status: "pending",
+        }
+      ];
+      fs.writeFileSync(CONSULTATIONS_PATH, JSON.stringify(initConsults, null, 2), "utf8");
+    }
+    if (!fs.existsSync(INQUIRIES_PATH)) {
+      fs.writeFileSync(INQUIRIES_PATH, JSON.stringify([], null, 2), "utf8");
+      console.log("Local file-based databases successfully initialized/seeded!");
+    }
+  } catch (err: any) {
+    console.warn("Storage directory notice: Using in-memory and /tmp fallback for Vercel Serverless environment.");
   }
 }
 
@@ -621,14 +625,26 @@ function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
   return merged;
 }
 
+let inMemoryDB: InFileDB | null = null;
+
 // Read database file
 function readLocalFile(): InFileDB {
+  if (inMemoryDB) {
+    return inMemoryDB;
+  }
+
   let siteConfig = DEFAULT_SITE_CONFIG;
   let consultations: Consultation[] = [];
   let contactInquiries: ContactInquiry[] = [];
 
+  const tmpSitePath = path.join("/tmp", "data", "site_config.json");
+  const tmpConsultPath = path.join("/tmp", "data", "consultations.json");
+  const tmpInqPath = path.join("/tmp", "data", "inquiries.json");
+
   try {
-    if (fs.existsSync(SITE_CONFIG_PATH)) {
+    if (fs.existsSync(tmpSitePath)) {
+      siteConfig = JSON.parse(fs.readFileSync(tmpSitePath, "utf8"));
+    } else if (fs.existsSync(SITE_CONFIG_PATH)) {
       siteConfig = JSON.parse(fs.readFileSync(SITE_CONFIG_PATH, "utf8"));
     }
   } catch (err) {
@@ -636,7 +652,9 @@ function readLocalFile(): InFileDB {
   }
 
   try {
-    if (fs.existsSync(CONSULTATIONS_PATH)) {
+    if (fs.existsSync(tmpConsultPath)) {
+      consultations = JSON.parse(fs.readFileSync(tmpConsultPath, "utf8"));
+    } else if (fs.existsSync(CONSULTATIONS_PATH)) {
       consultations = JSON.parse(fs.readFileSync(CONSULTATIONS_PATH, "utf8"));
     }
   } catch (err) {
@@ -644,22 +662,27 @@ function readLocalFile(): InFileDB {
   }
 
   try {
-    if (fs.existsSync(INQUIRIES_PATH)) {
+    if (fs.existsSync(tmpInqPath)) {
+      contactInquiries = JSON.parse(fs.readFileSync(tmpInqPath, "utf8"));
+    } else if (fs.existsSync(INQUIRIES_PATH)) {
       contactInquiries = JSON.parse(fs.readFileSync(INQUIRIES_PATH, "utf8"));
     }
   } catch (err) {
     console.error("Error reading INQUIRIES_PATH file", err);
   }
 
-  return {
+  inMemoryDB = {
     siteConfig,
     consultations,
     contactInquiries
   };
+
+  return inMemoryDB;
 }
 
 // Write database file
 function writeLocalFile(data: InFileDB) {
+  inMemoryDB = data;
   try {
     const dataDir = path.dirname(SITE_CONFIG_PATH);
     if (!fs.existsSync(dataDir)) {
@@ -669,7 +692,18 @@ function writeLocalFile(data: InFileDB) {
     fs.writeFileSync(CONSULTATIONS_PATH, JSON.stringify(data.consultations, null, 2), "utf8");
     fs.writeFileSync(INQUIRIES_PATH, JSON.stringify(data.contactInquiries, null, 2), "utf8");
   } catch (err) {
-    console.error("Error writing JSON db files", err);
+    // Fallback to /tmp if process.cwd() is read-only (Vercel Serverless)
+    try {
+      const tmpDataDir = path.join("/tmp", "data");
+      if (!fs.existsSync(tmpDataDir)) {
+        fs.mkdirSync(tmpDataDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(tmpDataDir, "site_config.json"), JSON.stringify(data.siteConfig, null, 2), "utf8");
+      fs.writeFileSync(path.join(tmpDataDir, "consultations.json"), JSON.stringify(data.consultations, null, 2), "utf8");
+      fs.writeFileSync(path.join(tmpDataDir, "inquiries.json"), JSON.stringify(data.contactInquiries, null, 2), "utf8");
+    } catch (e) {
+      console.error("Error writing to /tmp json db files", e);
+    }
   }
 }
 
