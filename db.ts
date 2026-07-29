@@ -81,7 +81,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
   ],
   logoUrl: "", // Default empty, falls back to Metaspace vector logo or download.jpg
   lagosBridgeUrl: "https://images.unsplash.com/photo-1599839352727-4c749b5c2253?q=80&w=1200&auto=format&fit=crop",
-  home_hero_title_color: "#141b77",
+  home_hero_title_color: "#1727e7",
   home_hero_title_highlight_color: "#ef4444",
   whatsapp_number: "+2348123456789",
   footer_tagline: "Building Systems. Empowering People. Transforming Africa.",
