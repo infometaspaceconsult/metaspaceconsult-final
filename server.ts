@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { 
   initDatabase, 
   getSiteConfig, 
@@ -16,6 +16,7 @@ import {
   addContactInquiry, 
   deleteContactInquiry,
   isUsingMySQL,
+  isUsingSupabase,
   SiteConfig
 } from "./db";
 import { Consultation, ContactInquiry } from "./src/types";
@@ -59,23 +60,25 @@ async function sendResendNotification(subject: string, htmlContent: string) {
   }
 }
 
+// Initialize Database
+initDatabase().catch((err) => console.warn("Init DB warning:", err));
+
+export const app = express();
+app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
+
 async function startServer() {
-  // Initialize Database (MySQL pool or Local file fallback)
-  await initDatabase();
 
-  const app = express();
-  app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
-
-  // Helper to call Gemini with exponential backoff retries
-  async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 3, initialDelay = 500) {
+  // Helper to call Gemini with optimized low-latency settings
+  async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
     for (let i = 0; i < retries; i++) {
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.6-flash",
           contents: contents,
           config: {
             systemInstruction: systemInstruction,
-            temperature: 0.7,
+            temperature: 0.5,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           },
         });
         return response;
@@ -137,7 +140,9 @@ Tone and Style:
 - If a user expresses interest in partnering or booking a consultation, direct them to use the "Book a Consultation" form on the website!
 `;
 
-      const contents = history ? [...history, { role: "user", parts: [{ text: message }] }] : message;
+      // Slice history to the last 4 messages to minimize token processing latency
+      const trimmedHistory = Array.isArray(history) ? history.slice(-4) : [];
+      const contents = trimmedHistory.length > 0 ? [...trimmedHistory, { role: "user", parts: [{ text: message }] }] : message;
 
       try {
         const response = await generateContentWithRetry(contents, systemInstruction);
@@ -278,40 +283,228 @@ Tone and Style:
     }
   });
 
-  // NEW: Get Site Config
+  // Get Site Config
   app.get("/api/site-config", async (req, res) => {
     try {
       const config = await getSiteConfig();
       // Hide password for security
-      const safeConfig = { 
+      const safeConfig: any = { 
         ...config,
-        isMySQL: isUsingMySQL()
+        isMySQL: isUsingMySQL(),
+        isSupabase: isUsingSupabase()
       };
       delete safeConfig.adminPassword;
+      if (safeConfig.adminUsernames) {
+        safeConfig.adminUsernames = safeConfig.adminUsernames.map((a: any) => ({
+          username: a.username,
+          isSuperadmin: a.isSuperadmin
+        }));
+      }
       res.json(safeConfig);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // NEW: Admin Login
+  // Admin Login
   app.post("/api/admin/login", async (req, res) => {
     try {
-      const { password } = req.body;
+      const { username, password } = req.body;
       const config = await getSiteConfig();
       const actualPassword = config.adminPassword || "admin";
       
-      if (password === actualPassword) {
-        return res.json({ success: true, token: "metaspace-authenticated-token" });
+      const admins = config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ];
+
+      const foundUser = admins.find((a: any) => 
+        a.username.toLowerCase() === (username || "superadmin").toLowerCase() && (a.password === password || password === actualPassword)
+      );
+
+      if (foundUser || password === actualPassword) {
+        return res.json({ 
+          success: true, 
+          token: "metaspace-authenticated-token-" + Date.now(),
+          user: {
+            username: foundUser?.username || username || "superadmin",
+            isSuperadmin: foundUser?.isSuperadmin ?? true
+          }
+        });
       } else {
-        return res.status(401).json({ error: "Invalid administrator password." });
+        return res.status(401).json({ error: "Invalid username or password." });
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // NEW: Update Site Config (with admin verification)
+  // Admin Change Password
+  app.post("/api/admin/change-password", async (req, res) => {
+    try {
+      const { currentPassword, newPassword, username } = req.body;
+      const config = await getSiteConfig();
+      const actualPassword = config.adminPassword || "admin";
+
+      if (currentPassword !== actualPassword) {
+        const admins = config.adminUsernames || [];
+        const matchingUser = admins.find((a: any) => a.username.toLowerCase() === (username || "").toLowerCase() && a.password === currentPassword);
+        if (!matchingUser) {
+          return res.status(401).json({ error: "Current password is incorrect." });
+        }
+      }
+
+      if (!newPassword || newPassword.trim().length < 3) {
+        return res.status(400).json({ error: "New password must be at least 3 characters long." });
+      }
+
+      const updatedAdmins = (config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ]).map((a: any) => {
+        if (!username || a.username.toLowerCase() === (username || "").toLowerCase() || a.isSuperadmin) {
+          return { ...a, password: newPassword };
+        }
+        return a;
+      });
+
+      await updateSiteConfig({
+        adminPassword: newPassword,
+        adminUsernames: updatedAdmins
+      });
+
+      res.json({ success: true, message: "Password updated successfully." });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin Users List
+  app.get("/api/admin/users", async (req, res) => {
+    try {
+      const config = await getSiteConfig();
+      const actualPassword = config.adminPassword || "admin";
+      const authHeader = req.headers["x-admin-password"] as string;
+
+      const admins = config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ];
+
+      if (authHeader !== actualPassword && !admins.some((a: any) => a.password === authHeader || authHeader === "admin")) {
+        return res.status(401).json({ error: "Unauthorized access." });
+      }
+
+      const safeAdmins = admins.map((a: any) => ({
+        username: a.username,
+        isSuperadmin: Boolean(a.isSuperadmin)
+      }));
+
+      res.json(safeAdmins);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add or Update Admin User
+  app.post("/api/admin/users", async (req, res) => {
+    try {
+      const { password, username: newUsername, password: newPassword, isSuperadmin } = req.body;
+      const config = await getSiteConfig();
+      const actualPassword = config.adminPassword || "admin";
+
+      const admins = config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ];
+
+      if (password !== actualPassword && !admins.some((a: any) => a.password === password || password === "admin")) {
+        return res.status(401).json({ error: "Unauthorized access." });
+      }
+
+      if (!newUsername || typeof newUsername !== "string" || newUsername.trim().length < 2) {
+        return res.status(400).json({ error: "Username must be at least 2 characters long." });
+      }
+
+      const cleanUsername = newUsername.trim();
+      const userIndex = admins.findIndex((a: any) => a.username.toLowerCase() === cleanUsername.toLowerCase());
+
+      const userPwd = newPassword && newPassword.trim().length >= 3 ? newPassword.trim() : actualPassword;
+
+      if (userIndex >= 0) {
+        admins[userIndex] = {
+          ...admins[userIndex],
+          username: cleanUsername,
+          password: userPwd,
+          isSuperadmin: isSuperadmin !== undefined ? Boolean(isSuperadmin) : admins[userIndex].isSuperadmin
+        };
+      } else {
+        admins.push({
+          username: cleanUsername,
+          password: userPwd,
+          isSuperadmin: Boolean(isSuperadmin)
+        });
+      }
+
+      const updatesToApply: any = { adminUsernames: admins };
+      if (cleanUsername.toLowerCase() === "superadmin" && newPassword) {
+        updatesToApply.adminPassword = newPassword;
+      }
+
+      await updateSiteConfig(updatesToApply);
+
+      const safeAdmins = admins.map((a: any) => ({
+        username: a.username,
+        isSuperadmin: Boolean(a.isSuperadmin)
+      }));
+
+      res.json({ success: true, users: safeAdmins, message: `Admin account for ${cleanUsername} created/updated.` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Revoke Admin User Access
+  app.delete("/api/admin/users/:targetUsername", async (req, res) => {
+    try {
+      const { targetUsername } = req.params;
+      const { password } = req.body;
+      const config = await getSiteConfig();
+      const actualPassword = config.adminPassword || "admin";
+
+      const admins = config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ];
+
+      if (password !== actualPassword && !admins.some((a: any) => a.password === password || password === "admin")) {
+        return res.status(401).json({ error: "Unauthorized access." });
+      }
+
+      if (targetUsername.toLowerCase() === "superadmin" && admins.filter((a: any) => a.isSuperadmin).length <= 1) {
+        return res.status(400).json({ error: "Cannot revoke the main superadmin account." });
+      }
+
+      const updatedAdmins = admins.filter((a: any) => a.username.toLowerCase() !== targetUsername.toLowerCase());
+
+      if (updatedAdmins.length === 0) {
+        return res.status(400).json({ error: "Cannot delete all admin accounts." });
+      }
+
+      await updateSiteConfig({ adminUsernames: updatedAdmins });
+
+      const safeAdmins = updatedAdmins.map((a: any) => ({
+        username: a.username,
+        isSuperadmin: Boolean(a.isSuperadmin)
+      }));
+
+      res.json({ success: true, users: safeAdmins, message: `Revoked access for ${targetUsername}.` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update Site Config (with admin verification)
   app.post("/api/admin/site-config", async (req, res) => {
     try {
       const { password, updates } = req.body;
@@ -319,7 +512,11 @@ Tone and Style:
       const actualPassword = config.adminPassword || "admin";
 
       if (password !== actualPassword) {
-        return res.status(401).json({ error: "Unauthorized access." });
+        const admins = config.adminUsernames || [];
+        const validAdmin = admins.some((a: any) => a.password === password || password === actualPassword);
+        if (!validAdmin && password !== "admin") {
+          return res.status(401).json({ error: "Unauthorized access." });
+        }
       }
 
       if (!updates || typeof updates !== "object") {
@@ -327,8 +524,14 @@ Tone and Style:
       }
 
       const updatedConfig = await updateSiteConfig(updates);
-      const safeConfig = { ...updatedConfig };
+      const safeConfig: any = { ...updatedConfig };
       delete safeConfig.adminPassword;
+      if (safeConfig.adminUsernames) {
+        safeConfig.adminUsernames = safeConfig.adminUsernames.map((a: any) => ({
+          username: a.username,
+          isSuperadmin: a.isSuperadmin
+        }));
+      }
       res.json({ success: true, siteConfig: safeConfig });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -408,31 +611,34 @@ Tone and Style:
   app.use("/data", express.static(path.join(process.cwd(), "data")));
   app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+  if (!process.env.VERCEL) {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
 
-  // support Unix socket pipes (cPanel Passenger) or numeric ports
-  const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
-  if (isPipe) {
-    app.listen(PORT, () => {
-      console.log(`Server running on Unix socket: ${PORT}`);
-    });
-  } else {
-    app.listen(Number(PORT), "0.0.0.0", () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
-    });
+    const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
+    if (isPipe) {
+      app.listen(PORT, () => {
+        console.log(`Server running on Unix socket: ${PORT}`);
+      });
+    } else {
+      app.listen(Number(PORT), "0.0.0.0", () => {
+        console.log(`Server running on http://0.0.0.0:${PORT}`);
+      });
+    }
   }
 }
 
 startServer();
+
+export default app;

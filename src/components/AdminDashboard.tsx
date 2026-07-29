@@ -3,12 +3,13 @@ import {
   ShieldCheck, RefreshCw, Calendar, Mail, FileText, CheckCircle, Clock, 
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
   Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, AlertCircle,
-  Briefcase
+  Briefcase, UserPlus, UserCheck, UserX, Users
 } from "lucide-react";
 import { Consultation, ContactInquiry, Venture, ServiceOffer } from "../types";
 import { 
   apiFetchSiteConfig, apiSaveSiteConfig, apiLoginAdmin, 
-  apiFetchConsultations, apiFetchInquiries 
+  apiFetchConsultations, apiFetchInquiries,
+  apiFetchAdminUsers, apiAddAdminUser, apiDeleteAdminUser
 } from "../lib/apiFallback";
 
 export default function AdminDashboard() {
@@ -18,8 +19,14 @@ export default function AdminDashboard() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState("");
 
-  // UI Tabs inside Admin: "ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor"
-  const [activeAdminTab, setActiveAdminTab] = useState<"ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor">("ledger");
+  // UI Tabs inside Admin: "ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor" | "admin_security"
+  const [activeAdminTab, setActiveAdminTab] = useState<"ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor" | "admin_security">("ledger");
+
+  // Admin Users Management States
+  const [adminUsers, setAdminUsers] = useState<{ username: string; isSuperadmin: boolean }[]>([]);
+  const [newAdminUsername, setNewAdminUsername] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [newAdminIsSuperadmin, setNewAdminIsSuperadmin] = useState(false);
 
   // Data States
   const [consultations, setConsultations] = useState<Consultation[]>([]);
@@ -62,15 +69,18 @@ export default function AdminDashboard() {
   const [footerQuickLinks, setFooterQuickLinks] = useState<{ label: string; tab: string }[]>([]);
   const [footerVenturesLinks, setFooterVenturesLinks] = useState<{ label: string; tab: string }[]>([]);
 
-  // Password update fields
+  // Username and Password fields
+  const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "superadmin");
   const [newPassword, setNewPassword] = useState("");
 
   // Check existing token on mount
   useEffect(() => {
     const token = localStorage.getItem("metaspace_admin_token");
     const savedPassword = localStorage.getItem("metaspace_admin_password");
+    const savedUsername = localStorage.getItem("metaspace_admin_username") || "superadmin";
     if (token && savedPassword) {
       setPassword(savedPassword);
+      setUsername(savedUsername);
       setIsAuthenticated(true);
       fetchAdminData(savedPassword);
     }
@@ -84,14 +94,15 @@ export default function AdminDashboard() {
     setAuthError("");
 
     try {
-      const result = await apiLoginAdmin(password);
+      const result = await apiLoginAdmin(username, password);
       if (result.success) {
         setIsAuthenticated(true);
         localStorage.setItem("metaspace_admin_token", result.token || "mock-token");
         localStorage.setItem("metaspace_admin_password", password);
+        localStorage.setItem("metaspace_admin_username", username);
         fetchAdminData(password);
       } else {
-        setAuthError(result.error || "Incorrect password.");
+        setAuthError(result.error || "Incorrect username or password.");
       }
     } catch (err) {
       setAuthError("Server connection failed. Try again.");
@@ -103,6 +114,7 @@ export default function AdminDashboard() {
   const handleLogout = () => {
     localStorage.removeItem("metaspace_admin_token");
     localStorage.removeItem("metaspace_admin_password");
+    localStorage.removeItem("metaspace_admin_username");
     setIsAuthenticated(false);
     setPassword("");
   };
@@ -111,14 +123,16 @@ export default function AdminDashboard() {
     setIsLoading(true);
     try {
       // Fetch dynamic content and submissions seamlessly
-      const [consultsData, inqsData, configData] = await Promise.all([
+      const [consultsData, inqsData, configData, usersData] = await Promise.all([
         apiFetchConsultations(),
         apiFetchInquiries(),
-        apiFetchSiteConfig()
+        apiFetchSiteConfig(),
+        apiFetchAdminUsers(pwd)
       ]);
 
       setConsultations(consultsData);
       setInquiries(inqsData);
+      if (usersData) setAdminUsers(usersData);
 
       if (configData) {
         const d = configData;
@@ -154,6 +168,55 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error("Admin Fetch Error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleAddAdminUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminUsername.trim()) return;
+    setIsLoading(true);
+    setMessage("");
+    setErrMessage("");
+    try {
+      const res = await apiAddAdminUser(password, {
+        username: newAdminUsername.trim(),
+        password: newAdminPassword.trim() || undefined,
+        isSuperadmin: newAdminIsSuperadmin
+      });
+      if (res.success) {
+        setMessage(`Administrator account for "${newAdminUsername.trim()}" created/updated successfully!`);
+        setNewAdminUsername("");
+        setNewAdminPassword("");
+        if (res.users) setAdminUsers(res.users);
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(res.error || "Failed to add administrator.");
+      }
+    } catch (err: any) {
+      setErrMessage("Error processing administrator creation.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRevokeAdminUser = async (targetUsername: string) => {
+    if (!window.confirm(`Are you sure you want to revoke access for administrator "${targetUsername}"?`)) return;
+    setIsLoading(true);
+    setMessage("");
+    setErrMessage("");
+    try {
+      const res = await apiDeleteAdminUser(password, targetUsername);
+      if (res.success) {
+        setMessage(`Revoked access for administrator "${targetUsername}".`);
+        if (res.users) setAdminUsers(res.users);
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(res.error || "Failed to revoke administrator access.");
+      }
+    } catch (err: any) {
+      setErrMessage("Error revoking access.");
     } finally {
       setIsLoading(false);
     }
@@ -410,6 +473,23 @@ export default function AdminDashboard() {
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="flex flex-col space-y-1 text-left">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                Username / Admin ID
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="e.g. superadmin or admin"
+                  className="w-full pl-9 pr-3 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
+                />
+                <ShieldCheck size={13} className="absolute left-3.5 top-3.5 text-gray-400" />
+              </div>
+            </div>
+
+            <div className="flex flex-col space-y-1 text-left">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                 Administrator Password
               </label>
               <div className="relative">
@@ -418,7 +498,7 @@ export default function AdminDashboard() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="e.g. admin"
+                  placeholder="Enter admin password"
                   className="w-full pl-9 pr-3 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
                 />
                 <KeyRound size={13} className="absolute left-3.5 top-3.5 text-gray-400" />
@@ -431,13 +511,9 @@ export default function AdminDashboard() {
               className="w-full py-3 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5"
             >
               {isLoggingIn ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={14} />}
-              <span>Verify Password</span>
+              <span>Sign In to Console</span>
             </button>
           </form>
-
-          <p className="text-[10px] text-gray-400 leading-normal italic">
-            Default test credential is "admin"
-          </p>
         </div>
       </div>
     );
@@ -503,7 +579,8 @@ export default function AdminDashboard() {
           { id: "text_editor", label: "Page Text & Layout", icon: <Edit3 size={13} /> },
           { id: "media_editor", label: "Images & Logo", icon: <ImageIcon size={13} /> },
           { id: "ventures_services", label: "Ventures & Services", icon: <Briefcase size={13} /> },
-          { id: "footer_editor", label: "Footer & Chat Support", icon: <Settings size={13} /> }
+          { id: "footer_editor", label: "Footer & Chat Support", icon: <Settings size={13} /> },
+          { id: "admin_security", label: "Admins & Access", icon: <Users size={13} /> }
         ].map((t) => (
           <button
             key={t.id}
@@ -1159,6 +1236,44 @@ export default function AdminDashboard() {
       {activeAdminTab === "footer_editor" && (
         <div className="space-y-8 animate-in fade-in duration-200">
           
+          {/* SECURITY & ADMIN CREDENTIALS CARD */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
+              <div>
+                <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-brand-crimson" />
+                  Admin Console Credentials & Security
+                </h3>
+                <p className="text-[11px] text-gray-400">
+                  Update administrator password for <strong>{username}</strong>. Changes take effect across Supabase & backend configuration.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdatePassword} className="flex flex-col sm:flex-row items-end gap-3 pt-1">
+              <div className="flex-1 w-full space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new administrator password"
+                  className="w-full px-3.5 py-2.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl outline-none font-semibold"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !newPassword.trim()}
+                className="px-5 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5 shrink-0"
+              >
+                {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+                <span>Update Password</span>
+              </button>
+            </form>
+          </div>
+          
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-6">
             <div className="border-b border-gray-50 pb-3 flex justify-between items-center">
               <div>
@@ -1441,6 +1556,180 @@ export default function AdminDashboard() {
 
             </div>
 
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB 6: ADMIN USERS & SECURITY */}
+      {activeAdminTab === "admin_security" && (
+        <div className="space-y-8 animate-in fade-in duration-200">
+          
+          {/* ADMIN ACCOUNTS & REVOCATION CARD */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-6">
+            <div className="border-b border-gray-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                  <Users size={18} className="text-brand-crimson" />
+                  Console User Management & Access Control
+                </h3>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Add new administrator accounts, assign access levels, and revoke access for existing users instantly.
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-brand-blue/5 border border-brand-blue/10 text-brand-blue text-[10px] font-bold rounded-full self-start md:self-auto">
+                <ShieldCheck size={12} className="text-brand-blue" />
+                {adminUsers.length} Active Console Admins
+              </span>
+            </div>
+
+            {/* ACTIVE ADMINS LIST */}
+            <div className="space-y-3">
+              <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Active Administrator Accounts</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {adminUsers.map((admin) => {
+                  const isSelf = admin.username.toLowerCase() === username.toLowerCase();
+                  return (
+                    <div 
+                      key={admin.username}
+                      className="p-3.5 bg-gray-50 border border-gray-200/80 rounded-xl flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                          admin.isSuperadmin ? "bg-brand-crimson text-white" : "bg-brand-blue text-white"
+                        }`}>
+                          {admin.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-brand-blue truncate">{admin.username}</span>
+                            {isSelf && (
+                              <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-extrabold rounded uppercase shrink-0">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold block">
+                            {admin.isSuperadmin ? "Super Admin" : "Console Admin"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {!isSelf ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeAdminUser(admin.username)}
+                          disabled={isLoading}
+                          title={`Revoke access for ${admin.username}`}
+                          className="p-2 bg-red-50 hover:bg-red-100 text-brand-crimson border border-red-200 text-xs font-bold rounded-lg transition flex items-center gap-1 shrink-0"
+                        >
+                          <UserX size={13} />
+                          <span className="text-[10px] uppercase font-bold">Revoke</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 italic shrink-0">Active Session</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ADD NEW ADMIN USER FORM */}
+            <div className="border-t border-gray-100 pt-6 space-y-4">
+              <h4 className="text-[11px] font-bold text-brand-blue uppercase tracking-wider flex items-center gap-1.5">
+                <UserPlus size={14} className="text-brand-crimson" />
+                Add New Admin Account
+              </h4>
+
+              <form onSubmit={handleAddAdminUser} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                <div className="sm:col-span-4 space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Username / ID</label>
+                  <input
+                    type="text"
+                    required
+                    value={newAdminUsername}
+                    onChange={(e) => setNewAdminUsername(e.target.value)}
+                    placeholder="e.g. victor_admin"
+                    className="w-full px-3 py-2.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl outline-none font-semibold"
+                  />
+                </div>
+
+                <div className="sm:col-span-4 space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    placeholder="Set admin password"
+                    className="w-full px-3 py-2.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl outline-none font-semibold"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 space-y-1 flex flex-col justify-end">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Privileges</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewAdminIsSuperadmin(!newAdminIsSuperadmin)}
+                    className={`w-full py-2.5 px-2 text-[10px] font-bold uppercase rounded-xl border transition text-center ${
+                      newAdminIsSuperadmin ? "bg-brand-crimson text-white border-brand-crimson" : "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200"
+                    }`}
+                  >
+                    {newAdminIsSuperadmin ? "Super Admin" : "Standard Admin"}
+                  </button>
+                </div>
+
+                <div className="sm:col-span-2 space-y-1">
+                  <button
+                    type="submit"
+                    disabled={isLoading || !newAdminUsername.trim() || !newAdminPassword.trim()}
+                    className="w-full py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[10px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5"
+                  >
+                    {isLoading ? <Loader2 size={13} className="animate-spin" /> : <UserPlus size={13} />}
+                    <span>Add User</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          {/* CHANGE LOGGED-IN ACCOUNT PASSWORD CARD */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4">
+            <div className="border-b border-gray-100 pb-3 flex justify-between items-center">
+              <div>
+                <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                  <KeyRound size={16} className="text-brand-crimson" />
+                  Change Password for ({username})
+                </h3>
+                <p className="text-[11px] text-gray-400">
+                  Update your administrator password across the backend and Supabase data store.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdatePassword} className="flex flex-col sm:flex-row items-end gap-3 pt-1">
+              <div className="flex-1 w-full space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">New Password</label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="w-full px-3.5 py-2.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl outline-none font-semibold"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading || !newPassword.trim()}
+                className="px-5 py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5 shrink-0"
+              >
+                {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Lock size={13} />}
+                <span>Update Password</span>
+              </button>
+            </form>
           </div>
 
         </div>

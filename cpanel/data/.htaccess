@@ -1,3 +1,0 @@
-# Prevent direct download of database JSON files via browser
-Order deny,allow
-Deny from all

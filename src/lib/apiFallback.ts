@@ -35,12 +35,35 @@ const DEFAULT_CONFIG = {
     { label: "Contact Us", tab: "contact" }
   ],
   footer_ventures_links: [
+    { label: "MetaGen Project", tab: "ventures" },
     { label: "Ugbekun Platform", tab: "ventures" },
     { label: "Oghowa Accelerator", tab: "ventures" },
-    { label: "EduRide Logistics", tab: "ventures" },
+    { label: "MyEduRide Logistics", tab: "ventures" },
     { label: "Cyona Medicare", tab: "ventures" }
   ],
   ventures: [
+    {
+      id: "metagen",
+      name: "MetaGen Project",
+      tagline: "Empowering Digital Leaders & Transformative Education",
+      description: "An initiative of Metaspace Consult promoting digital transformation for School Administrators, Teachers, and Students to cultivate the digital leaders of tomorrow.",
+      fullDetails: "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.",
+      iconName: "sparkles",
+      color: "from-purple-600 to-indigo-800",
+      url: "https://www.metaspaceconsult.com/metagen",
+      stats: [
+        { label: "Won Awards", value: "3x" },
+        { label: "Schools Reached", value: "100+" },
+        { label: "Students Trained", value: "1,000+" },
+        { label: "Programs & Trainings", value: "50+" }
+      ],
+      impactPoints: [
+        "Comprehensive digital human capital development for teachers, students, and administrators.",
+        "Customized digital tools and support services tailored for Nigerian educational ecosystems.",
+        "Fostering digital culture, equitable access to resources, and enhanced collaboration."
+      ],
+      founderQuote: "MetaGen Project equips educators and students with the knowledge, skills, and mindset to lead Africa's digital transformation."
+    },
     {
       id: "ugbekun",
       name: "Ugbekun",
@@ -259,16 +282,24 @@ export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
   return true;
 }
 
-export async function apiLoginAdmin(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
+export async function apiLoginAdmin(usernameOrPassword: string, passwordInput?: string): Promise<{ success: boolean; token?: string; username?: string; isSuperadmin?: boolean; error?: string }> {
+  const username = passwordInput !== undefined ? usernameOrPassword : "superadmin";
+  const password = passwordInput !== undefined ? passwordInput : usernameOrPassword;
+
   try {
     const res = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ username, password })
     });
     if (res.ok) {
       const data = await res.json();
-      return { success: true, token: data.token };
+      return { 
+        success: true, 
+        token: data.token,
+        username: data.user?.username || username,
+        isSuperadmin: data.user?.isSuperadmin ?? true
+      };
     } else {
       const data = await res.json();
       return { success: false, error: data.error };
@@ -278,11 +309,102 @@ export async function apiLoginAdmin(password: string): Promise<{ success: boolea
     // Fallback comparison
     const config = getLocalConfig();
     const actualPassword = config.adminPassword || "admin";
-    if (password === actualPassword) {
-      return { success: true, token: "mock-client-token-" + Date.now() };
+    
+    // Check superadmin/admin fallback
+    const admins = config.adminUsernames || [
+      { username: "superadmin", password: actualPassword, isSuperadmin: true },
+      { username: "admin", password: actualPassword, isSuperadmin: true }
+    ];
+
+    const foundAdmin = admins.find(a => 
+      a.username.toLowerCase() === username.toLowerCase() && (a.password === password || password === actualPassword)
+    );
+
+    if (foundAdmin || password === actualPassword) {
+      return { 
+        success: true, 
+        token: "mock-client-token-" + Date.now(),
+        username: foundAdmin?.username || username || "superadmin",
+        isSuperadmin: foundAdmin?.isSuperadmin ?? true
+      };
     } else {
       return { success: false, error: "Incorrect admin credentials." };
     }
+  }
+}
+
+export async function apiFetchAdminUsers(password: string): Promise<{ username: string; isSuperadmin: boolean }[]> {
+  try {
+    const res = await fetch("/api/admin/users", {
+      headers: { "x-admin-password": password }
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.warn("Fetch admin users failed, fallback to local.");
+  }
+  const config = getLocalConfig();
+  return (config.adminUsernames || [
+    { username: "superadmin", isSuperadmin: true },
+    { username: "admin", isSuperadmin: true }
+  ]).map(a => ({ username: a.username, isSuperadmin: Boolean(a.isSuperadmin) }));
+}
+
+export async function apiAddAdminUser(password: string, newAdmin: { username: string; password?: string; isSuperadmin: boolean }): Promise<{ success: boolean; users?: any[]; error?: string }> {
+  try {
+    const res = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, ...newAdmin })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, users: data.users };
+    } else {
+      const data = await res.json();
+      return { success: false, error: data.error };
+    }
+  } catch (e: any) {
+    const config = getLocalConfig();
+    const admins = config.adminUsernames || [
+      { username: "superadmin", password: "admin", isSuperadmin: true },
+      { username: "admin", password: "admin", isSuperadmin: true }
+    ];
+    const idx = admins.findIndex(a => a.username.toLowerCase() === newAdmin.username.toLowerCase());
+    if (idx >= 0) {
+      admins[idx] = { ...admins[idx], ...newAdmin };
+    } else {
+      admins.push(newAdmin);
+    }
+    saveLocalConfig({ ...config, adminUsernames: admins });
+    return { success: true, users: admins.map(a => ({ username: a.username, isSuperadmin: Boolean(a.isSuperadmin) })) };
+  }
+}
+
+export async function apiDeleteAdminUser(password: string, targetUsername: string): Promise<{ success: boolean; users?: any[]; error?: string }> {
+  try {
+    const res = await fetch(`/api/admin/users/${encodeURIComponent(targetUsername)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, users: data.users };
+    } else {
+      const data = await res.json();
+      return { success: false, error: data.error };
+    }
+  } catch (e: any) {
+    const config = getLocalConfig();
+    let admins = config.adminUsernames || [
+      { username: "superadmin", password: "admin", isSuperadmin: true },
+      { username: "admin", password: "admin", isSuperadmin: true }
+    ];
+    admins = admins.filter(a => a.username.toLowerCase() !== targetUsername.toLowerCase());
+    saveLocalConfig({ ...config, adminUsernames: admins });
+    return { success: true, users: admins.map(a => ({ username: a.username, isSuperadmin: Boolean(a.isSuperadmin) })) };
   }
 }
 
@@ -367,17 +489,23 @@ export async function apiCreateInquiry(inquiry: any): Promise<boolean> {
 
 export async function apiSendChatMsg(message: string, history: any[]): Promise<string> {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history })
+      body: JSON.stringify({ message, history }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
+
     if (res.ok) {
       const data = await res.json();
       return data.text;
     }
   } catch (err) {
-    console.warn("Server Chat endpoint failed. Formulating local fallback response.");
+    console.warn("Server Chat endpoint failed or timed out. Formulating instant local response.");
   }
 
   // Client-Side Intelligent Response System (Matches exact Metaspace profile data!)
