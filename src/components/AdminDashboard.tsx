@@ -70,14 +70,14 @@ export default function AdminDashboard() {
   const [footerVenturesLinks, setFooterVenturesLinks] = useState<{ label: string; tab: string }[]>([]);
 
   // Username and Password fields
-  const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "superadmin");
+  const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "");
   const [newPassword, setNewPassword] = useState("");
 
   // Check existing token on mount
   useEffect(() => {
     const token = localStorage.getItem("metaspace_admin_token");
     const savedPassword = localStorage.getItem("metaspace_admin_password");
-    const savedUsername = localStorage.getItem("metaspace_admin_username") || "superadmin";
+    const savedUsername = localStorage.getItem("metaspace_admin_username") || "";
     if (token && savedPassword) {
       setPassword(savedPassword);
       setUsername(savedUsername);
@@ -481,7 +481,7 @@ export default function AdminDashboard() {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="e.g. superadmin or admin"
+                  placeholder="Enter administrator username"
                   className="w-full pl-9 pr-3 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
                 />
                 <ShieldCheck size={13} className="absolute left-3.5 top-3.5 text-gray-400" />
@@ -498,7 +498,7 @@ export default function AdminDashboard() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter admin password"
+                  placeholder="Enter administrator password"
                   className="w-full pl-9 pr-3 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
                 />
                 <KeyRound size={13} className="absolute left-3.5 top-3.5 text-gray-400" />
