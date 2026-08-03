@@ -90,10 +90,17 @@ export async function testSupabaseConnection(url: string, key: string): Promise<
     const client = createClient(url, key);
     const { data, error } = await client.from("metaspace_config").select("*").limit(1);
     if (error) {
-      if (error.code === "42P01") {
+      const msg = error.message || "";
+      if (
+        error.code === "42P01" ||
+        error.code === "PGRST301" ||
+        msg.toLowerCase().includes("not find the table") ||
+        msg.toLowerCase().includes("relation") ||
+        msg.toLowerCase().includes("schema cache")
+      ) {
         return {
           success: true,
-          message: "Connected to Supabase project! Note: The table 'metaspace_config' needs to be created in your Supabase SQL Editor."
+          message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; local storage will be used until table is created in Supabase SQL Editor)."
         };
       }
       return { success: false, message: `Supabase Error: ${error.message}` };

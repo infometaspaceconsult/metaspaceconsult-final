@@ -131,7 +131,17 @@ async function sendResendNotification(subject: string, htmlContent: string, over
     if (!apiKey || apiKey.trim() === "") {
       return { success: false, error: "No Resend API Key configured in Environment or Site Settings." };
     }
-    const recipient = overrideRecipient || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
+    const rawRecipient = overrideRecipient || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
+    const recipient = rawRecipient.trim();
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(recipient)) {
+      return {
+        success: false,
+        error: `Invalid recipient email format: '${recipient}'. Please enter a valid email address (e.g. info@metaspaceconsulting.com).`
+      };
+    }
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -163,34 +173,33 @@ initDatabase().catch((err) => console.warn("Init DB warning:", err));
 export const app = express();
 app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
 
-async function startServer() {
-
-  // Helper to call Gemini with optimized low-latency settings
-  async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
-          contents: contents,
-          config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.5,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          },
-        });
-        return response;
-      } catch (err: any) {
-        console.warn(`Gemini API attempt ${i + 1} failed: ${err.message || err}`);
-        if (i === retries - 1) {
-          throw err; // Propagate error on the final attempt
-        }
-        const delay = initialDelay * Math.pow(2, i);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+// Helper to call Gemini with optimized low-latency settings
+async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.5,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        },
+      });
+      return response;
+    } catch (err: any) {
+      console.warn(`Gemini API attempt ${i + 1} failed: ${err.message || err}`);
+      if (i === retries - 1) {
+        throw err; // Propagate error on the final attempt
       }
+      const delay = initialDelay * Math.pow(2, i);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+}
 
-  // API 1: Gemini-powered consulting assistant
+// Synchronously defined API routes for instant handler registration
+// API 1: Gemini-powered consulting assistant
   app.post("/api/chat", async (req, res) => {
     try {
       const { message, history } = req.body;
@@ -758,33 +767,34 @@ Tone and Style:
   app.use("/data", express.static(path.join(process.cwd(), "data")));
   app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
-  if (!process.env.VERCEL) {
-    if (process.env.NODE_ENV !== "production") {
-      const vite = await createViteServer({
-        server: { middlewareMode: true },
-        appType: "spa",
-      });
-      app.use(vite.middlewares);
-    } else {
-      const distPath = path.join(process.cwd(), "dist");
-      app.use(express.static(distPath));
-      app.get("*", (req, res) => {
-        res.sendFile(path.join(distPath, "index.html"));
-      });
-    }
+  async function startServer() {
+    if (!process.env.VERCEL) {
+      if (process.env.NODE_ENV !== "production") {
+        const vite = await createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+        app.use(vite.middlewares);
+      } else {
+        const distPath = path.join(process.cwd(), "dist");
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+          res.sendFile(path.join(distPath, "index.html"));
+        });
+      }
 
-    const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
-    if (isPipe) {
-      app.listen(PORT, () => {
-        console.log(`Server running on Unix socket: ${PORT}`);
-      });
-    } else {
-      app.listen(Number(PORT), "0.0.0.0", () => {
-        console.log(`Server running on http://0.0.0.0:${PORT}`);
-      });
+      const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
+      if (isPipe) {
+        app.listen(PORT, () => {
+          console.log(`Server running on Unix socket: ${PORT}`);
+        });
+      } else {
+        app.listen(Number(PORT), "0.0.0.0", () => {
+          console.log(`Server running on http://0.0.0.0:${PORT}`);
+        });
+      }
     }
   }
-}
 
 startServer();
 
