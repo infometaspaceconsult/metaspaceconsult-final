@@ -17,6 +17,7 @@ import {
   deleteContactInquiry,
   isUsingMySQL,
   isUsingSupabase,
+  testSupabaseConnection,
   SiteConfig
 } from "./db";
 import { Consultation, ContactInquiry } from "./src/types";
@@ -35,28 +36,124 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Branded HTML Email Template Generator for Metaspace
+function renderMetaspaceEmailTemplate({
+  title,
+  preheader,
+  fields,
+  message
+}: {
+  title: string;
+  preheader?: string;
+  fields: { label: string; value: string }[];
+  message?: string;
+}) {
+  const fieldsHtml = fields.map(f => `
+    <tr>
+      <td style="padding: 10px 14px; font-weight: 700; color: #0A192F; font-size: 13px; border-bottom: 1px solid #edf2f7; width: 35%;">${f.label}</td>
+      <td style="padding: 10px 14px; color: #2d3748; font-size: 13px; border-bottom: 1px solid #edf2f7;">${f.value}</td>
+    </tr>
+  `).join("");
+
+  return `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title}</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    ${preheader ? `<div style="display: none; max-height: 0px; overflow: hidden;">${preheader}</div>` : ""}
+    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f6f9; padding: 30px 10px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+            
+            <!-- HEADER -->
+            <tr>
+              <td style="background-color: #0A192F; padding: 28px 32px; text-align: left; border-bottom: 4px solid #D00024;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td>
+                      <span style="font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: 1.5px; display: block;">METASPACE</span>
+                      <span style="font-size: 9px; font-weight: 700; color: #E61E3E; letter-spacing: 2px; text-transform: uppercase;">CONSULTING LIMITED</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- BODY CONTENT -->
+            <tr>
+              <td style="padding: 32px;">
+                <h2 style="margin: 0 0 8px 0; color: #0A192F; font-size: 20px; font-weight: 800;">${title}</h2>
+                <p style="margin: 0 0 24px 0; color: #718096; font-size: 13px; line-height: 1.5;">New transmission received via Metaspace Official Digital Portal.</p>
+                
+                <!-- KEY VALUES TABLE -->
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; border-collapse: collapse; margin-bottom: 24px;">
+                  ${fieldsHtml}
+                </table>
+
+                ${message ? `
+                  <div style="margin-top: 20px;">
+                    <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #718096; letter-spacing: 1px;">Message / Scope Details</p>
+                    <div style="background-color: #f1f5f9; border-left: 4px solid #D00024; padding: 16px; border-radius: 4px; color: #1e293b; font-size: 13px; line-height: 1.6; white-space: pre-line;">
+                      ${message}
+                    </div>
+                  </div>
+                ` : ""}
+              </td>
+            </tr>
+
+            <!-- FOOTER -->
+            <tr>
+              <td style="background-color: #0F1E36; padding: 20px 32px; text-align: center; color: #a0aec0; font-size: 11px; border-top: 1px solid #1a2e4c;">
+                <p style="margin: 0 0 4px 0; font-weight: 600; color: #e2e8f0;">Metaspace Consulting Limited</p>
+                <p style="margin: 0;">Building Systems. Empowering People. Transforming Africa.</p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+  `;
+}
+
 // Helper for sending email notifications via Resend API
-async function sendResendNotification(subject: string, htmlContent: string) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return;
+async function sendResendNotification(subject: string, htmlContent: string, overrideApiKey?: string, overrideRecipient?: string) {
   try {
     const config = await getSiteConfig();
-    const recipient = config.footer_email || "info@metaspaceconsulting.com";
-    await fetch("https://api.resend.com/emails", {
+    const apiKey = overrideApiKey || process.env.RESEND_API_KEY || config.resend_api_key;
+    if (!apiKey || apiKey.trim() === "") {
+      return { success: false, error: "No Resend API Key configured in Environment or Site Settings." };
+    }
+    const recipient = overrideRecipient || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
+    const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "Authorization": `Bearer ${apiKey.trim()}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        from: "Metaspace Consulting <onboarding@resend.dev>",
+        from: "Metaspace Notifications <onboarding@resend.dev>",
         to: [recipient],
         subject: subject,
         html: htmlContent
       })
     });
-  } catch (err) {
+
+    const data = await response.json();
+    if (!response.ok) {
+      return { success: false, error: data.message || data.error || JSON.stringify(data) };
+    }
+    return { success: true, data };
+  } catch (err: any) {
     console.warn("Resend email notification failed:", err);
+    return { success: false, error: err.message || String(err) };
   }
 }
 
@@ -208,18 +305,22 @@ Tone and Style:
 
       await addConsultation(newConsultation);
 
-      // Trigger email notification via Resend
-      sendResendNotification(
-        `New Consultation Booking: ${name} (${service})`,
-        `<h2>New Consultation Request</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Organization:</strong> ${organization || "Independent"}</p>
-        <p><strong>Sector:</strong> ${sector || "N/A"}</p>
-        <p><strong>Service Pillar:</strong> ${service}</p>
-        <p><strong>Message:</strong></p>
-        <blockquote style="background:#f9f9f9;padding:12px;border-left:4px solid #141b77;">${message}</blockquote>`
-      );
+      // Trigger email notification via Resend with branded template
+      const emailHtml = renderMetaspaceEmailTemplate({
+        title: "New Consultation Request Received",
+        preheader: `Consultation requested by ${name} for ${service}`,
+        fields: [
+          { label: "Client Name", value: name },
+          { label: "Email Address", value: email },
+          { label: "Organization", value: organization || "Independent" },
+          { label: "Industry Sector", value: sector || "Not Specified" },
+          { label: "Service Pillar", value: service },
+          { label: "Date Submitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
+        ],
+        message: message
+      });
+
+      sendResendNotification(`[New Consultation] ${name} - ${service}`, emailHtml);
 
       res.status(201).json({ success: true, consultation: newConsultation });
     } catch (error: any) {
@@ -256,20 +357,66 @@ Tone and Style:
 
       await addContactInquiry(newInquiry);
 
-      // Trigger email notification via Resend
-      sendResendNotification(
-        `New Contact Inquiry: ${subject} from ${name}`,
-        `<h2>New Contact Inquiry</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Subject:</strong> ${subject}</p>
-        <p><strong>Message:</strong></p>
-        <blockquote style="background:#f9f9f9;padding:12px;border-left:4px solid #ef4444;">${message}</blockquote>`
-      );
+      // Trigger email notification via Resend with branded template
+      const emailHtml = renderMetaspaceEmailTemplate({
+        title: "New Contact Portal Inquiry Received",
+        preheader: `Inquiry: ${subject} from ${name}`,
+        fields: [
+          { label: "Sender Name", value: name },
+          { label: "Sender Email", value: email },
+          { label: "Inquiry Subject", value: subject },
+          { label: "Date Transmitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
+        ],
+        message: message
+      });
+
+      sendResendNotification(`[Portal Inquiry] ${subject} from ${name}`, emailHtml);
 
       res.status(201).json({ success: true, inquiry: newInquiry });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // API: Admin Test Resend Email
+  app.post("/api/admin/test-email", async (req, res) => {
+    try {
+      const { apiKey, recipientEmail } = req.body;
+      const testHtml = renderMetaspaceEmailTemplate({
+        title: "Resend Email Connection Test",
+        preheader: "Testing Resend email service configuration for Metaspace Consult",
+        fields: [
+          { label: "Test Status", value: "SUCCESSFUL 🟢" },
+          { label: "Service Provider", value: "Resend API (v6)" },
+          { label: "Timestamp", value: new Date().toISOString() },
+          { label: "Target Recipient", value: recipientEmail || "Configured Notification Email" }
+        ],
+        message: "This is a test notification confirming that your Resend API Key is active and successfully transmitting branded emails from Metaspace Consulting Limited."
+      });
+
+      const result = await sendResendNotification("Metaspace Resend Test Email", testHtml, apiKey, recipientEmail);
+      if (result.success) {
+        res.json({ success: true, message: "Test email sent successfully via Resend!" });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // API: Admin Test Supabase Connection
+  app.post("/api/admin/test-db", async (req, res) => {
+    try {
+      const { supabaseUrl, supabaseKey } = req.body;
+      if (!supabaseUrl || !supabaseKey) {
+        return res.status(400).json({ success: false, error: "Please provide both Supabase URL and Key." });
+      }
+
+      const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 

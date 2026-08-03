@@ -3,7 +3,7 @@ import {
   ShieldCheck, RefreshCw, Calendar, Mail, FileText, CheckCircle, Clock, 
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
   Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, AlertCircle,
-  Briefcase, UserPlus, UserCheck, UserX, Users
+  Briefcase, UserPlus, UserCheck, UserX, Users, Database, Send
 } from "lucide-react";
 import { Consultation, ContactInquiry, Venture, ServiceOffer } from "../types";
 import { 
@@ -72,6 +72,18 @@ export default function AdminDashboard() {
   // Username and Password fields
   const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "");
   const [newPassword, setNewPassword] = useState("");
+
+  // Live DB & Email state
+  const [supabaseUrl, setSupabaseUrl] = useState("");
+  const [supabaseKey, setSupabaseKey] = useState("");
+  const [isSupabase, setIsSupabase] = useState(false);
+  const [dbTestResult, setDbTestResult] = useState("");
+  const [isTestingDb, setIsTestingDb] = useState(false);
+
+  const [resendApiKey, setResendApiKey] = useState("");
+  const [notificationEmail, setNotificationEmail] = useState("");
+  const [emailTestResult, setEmailTestResult] = useState("");
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
 
   // Check existing token on mount
   useEffect(() => {
@@ -152,6 +164,12 @@ export default function AdminDashboard() {
         setVentures(d.ventures || []);
         setServices(d.services || []);
         setIsMySQL(d.isMySQL || false);
+        setIsSupabase(d.isSupabase || false);
+
+        setSupabaseUrl(d.supabase_url || "");
+        setSupabaseKey(d.supabase_key || "");
+        setResendApiKey(d.resend_api_key || "");
+        setNotificationEmail(d.notification_email || d.footer_email || "info@metaspaceconsulting.com");
 
         setWhatsappNumber(d.whatsapp_number || "");
         setFooterTagline(d.footer_tagline || "");
@@ -312,6 +330,63 @@ export default function AdminDashboard() {
       console.error(err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleTestSupabase = async () => {
+    if (!supabaseUrl || !supabaseKey) {
+      setDbTestResult("🔴 Please fill in both Supabase Project URL and Key before testing.");
+      return;
+    }
+    setIsTestingDb(true);
+    setDbTestResult("Testing live connection to Supabase database...");
+    try {
+      const res = await fetch("/api/admin/test-db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDbTestResult(`🟢 ${data.message}`);
+        handleSaveConfig({ supabase_url: supabaseUrl.trim(), supabase_key: supabaseKey.trim() });
+      } else {
+        setDbTestResult(`🔴 ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      setDbTestResult(`🔴 Error connecting: ${err.message || String(err)}`);
+    } finally {
+      setIsTestingDb(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!resendApiKey) {
+      setEmailTestResult("🔴 Please enter your Resend API Key before testing.");
+      return;
+    }
+    setIsTestingEmail(true);
+    setEmailTestResult("Transmitting branded test email via Resend API...");
+    try {
+      const res = await fetch("/api/admin/test-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: resendApiKey.trim(),
+          recipientEmail: notificationEmail || footerEmail || "info@metaspaceconsulting.com"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEmailTestResult(`🟢 ${data.message}`);
+        handleSaveConfig({ resend_api_key: resendApiKey.trim(), notification_email: notificationEmail });
+      } else {
+        setEmailTestResult(`🔴 ${data.error || "Failed to transmit test email."}`);
+      }
+    } catch (err: any) {
+      setEmailTestResult(`🔴 Error: ${err.message || String(err)}`);
+    } finally {
+      setIsTestingEmail(false);
     }
   };
 
@@ -928,8 +1003,111 @@ export default function AdminDashboard() {
 
           </div>
 
-          {/* SIDEBAR: Security Settings */}
+          {/* SIDEBAR: Settings, DB & Email Cards */}
           <div className="lg:col-span-4 space-y-6">
+            
+            {/* LIVE DATABASE & SUPABASE */}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+              <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5">
+                  <Database size={14} className="text-emerald-500" />
+                  <span>Live Database (Supabase)</span>
+                </h3>
+                <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full ${isSupabase ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {isSupabase ? 'Supabase Live 🟢' : 'Local / Fallback 🟡'}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Project URL</label>
+                  <input
+                    type="text"
+                    value={supabaseUrl}
+                    onChange={(e) => setSupabaseUrl(e.target.value)}
+                    placeholder="https://xyz.supabase.co"
+                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                  />
+                </div>
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Service Key / Anon Key</label>
+                  <input
+                    type="password"
+                    value={supabaseKey}
+                    onChange={(e) => setSupabaseKey(e.target.value)}
+                    placeholder="eyJhbGciOiJIUzI1NiI..."
+                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                  />
+                </div>
+
+                {dbTestResult && (
+                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                    {dbTestResult}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleTestSupabase}
+                  disabled={isTestingDb}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition"
+                >
+                  {isTestingDb ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                  <span>{isTestingDb ? "Connecting..." : "Connect & Test Supabase DB"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* RESEND EMAIL NOTIFICATION INTEGRATION */}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-brand-blue" />
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5 pb-2 border-b border-gray-50">
+                <Mail size={14} className="text-brand-blue" />
+                <span>Resend Email Dispatch</span>
+              </h3>
+
+              <div className="space-y-3">
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Resend API Key</label>
+                  <input
+                    type="password"
+                    value={resendApiKey}
+                    onChange={(e) => setResendApiKey(e.target.value)}
+                    placeholder="re_123456789..."
+                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                  />
+                </div>
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Notification Target Email</label>
+                  <input
+                    type="email"
+                    value={notificationEmail}
+                    onChange={(e) => setNotificationEmail(e.target.value)}
+                    placeholder="info@metaspaceconsulting.com"
+                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none"
+                  />
+                </div>
+
+                {emailTestResult && (
+                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                    {emailTestResult}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleTestEmail}
+                  disabled={isTestingEmail}
+                  className="w-full py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition"
+                >
+                  {isTestingEmail ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                  <span>{isTestingEmail ? "Transmitting..." : "Test Resend Email Delivery"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* SECURITY CREDENTIALS */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1 bg-brand-crimson" />
               <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5 pb-2 border-b border-gray-50">

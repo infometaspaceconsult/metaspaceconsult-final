@@ -53,8 +53,21 @@ export interface SiteConfig {
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient | null {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  let url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    try {
+      const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
+      if (fileConf?.supabase_url && fileConf?.supabase_key) {
+        url = fileConf.supabase_url;
+        key = fileConf.supabase_key;
+      }
+    } catch {
+      // Ignore read error during boot
+    }
+  }
+
   if (url && key) {
     if (!supabaseInstance) {
       try {
@@ -66,6 +79,29 @@ export function getSupabaseClient(): SupabaseClient | null {
     return supabaseInstance;
   }
   return null;
+}
+
+export function resetSupabaseClient(): void {
+  supabaseInstance = null;
+}
+
+export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
+  try {
+    const client = createClient(url, key);
+    const { data, error } = await client.from("metaspace_config").select("*").limit(1);
+    if (error) {
+      if (error.code === "42P01") {
+        return {
+          success: true,
+          message: "Connected to Supabase project! Note: The table 'metaspace_config' needs to be created in your Supabase SQL Editor."
+        };
+      }
+      return { success: false, message: `Supabase Error: ${error.message}` };
+    }
+    return { success: true, message: "Live connection to Supabase database verified successfully!" };
+  } catch (err: any) {
+    return { success: false, message: `Failed to connect: ${err.message || String(err)}` };
+  }
 }
 
 export function isUsingSupabase(): boolean {
@@ -594,18 +630,37 @@ async function runMySQLMigrations() {
 function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
   const merged = { ...DEFAULT_SITE_CONFIG, ...config };
   
+  const defaultUrls: Record<string, string> = {
+    metagen: "https://www.metaspaceconsult.com/metagen",
+    ugbekun: "https://www.metaspaceconsult.com/ugbekun",
+    oghowa: "https://www.metaspaceconsult.com/oghowa",
+    eduride: "https://www.myeduride.com",
+    cyona: "https://www.cynonamediccare.com"
+  };
+
   if (Array.isArray(merged.ventures)) {
     const hasMetagen = merged.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
     if (!hasMetagen) {
       merged.ventures = [DEFAULT_SITE_CONFIG.ventures[0], ...merged.ventures];
     } else {
       merged.ventures = merged.ventures.map(v => {
-        if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
-          return DEFAULT_SITE_CONFIG.ventures[0];
+        if (!v) return v;
+        if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
+          return { ...DEFAULT_SITE_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_SITE_CONFIG.ventures[0].url };
         }
         return v;
       });
     }
+
+    // Ensure all ventures have official URLs
+    merged.ventures = merged.ventures.map(v => {
+      if (!v) return v;
+      const fallbackUrl = defaultUrls[v.id] || "https://www.metaspaceconsult.com";
+      if (!v.url || v.url.trim() === "") {
+        return { ...v, url: fallbackUrl };
+      }
+      return v;
+    });
   } else {
     merged.ventures = DEFAULT_SITE_CONFIG.ventures;
   }
@@ -778,6 +833,10 @@ export async function getSiteConfig(): Promise<SiteConfig> {
 
 // API EXPORTS: Update Site Config
 export async function updateSiteConfig(updates: Partial<SiteConfig>): Promise<SiteConfig> {
+  if (updates.supabase_url !== undefined || updates.supabase_key !== undefined) {
+    resetSupabaseClient();
+  }
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
