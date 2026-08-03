@@ -346,12 +346,22 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() })
       });
-      const data = await res.json();
+      
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+        setDbTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
+        return;
+      }
+
       if (data.success) {
         setDbTestResult(`🟢 ${data.message}`);
         handleSaveConfig({ supabase_url: supabaseUrl.trim(), supabase_key: supabaseKey.trim() });
       } else {
-        setDbTestResult(`🔴 ${data.message || data.error}`);
+        setDbTestResult(`🔴 ${data.message || data.error || "Database connection test failed."}`);
       }
     } catch (err: any) {
       setDbTestResult(`🔴 Error connecting: ${err.message || String(err)}`);
@@ -376,7 +386,17 @@ export default function AdminDashboard() {
           recipientEmail: notificationEmail || footerEmail || "info@metaspaceconsulting.com"
         })
       });
-      const data = await res.json();
+
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+        setEmailTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
+        return;
+      }
+
       if (data.success) {
         setEmailTestResult(`🟢 ${data.message}`);
         handleSaveConfig({ resend_api_key: resendApiKey.trim(), notification_email: notificationEmail });
