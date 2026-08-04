@@ -630,7 +630,7 @@ export default function AdminDashboard() {
             Corporate Operations & Layout Console
           </h2>
           <p className="text-xs text-gray-500 font-sans mt-0.5">
-            Connected database: <strong className="text-brand-blue uppercase">{isMySQL ? "cPanel MySQL Database" : "Local persistent JSON ledger"}</strong>
+            Connected database: <strong className="text-brand-blue uppercase">{isSupabase ? "Supabase Cloud Database (Live 🟢)" : "Local Persistent JSON Ledger (Fallback 🟡)"}</strong>
           </p>
         </div>
 
