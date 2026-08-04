@@ -85,9 +85,22 @@ export function resetSupabaseClient(): void {
   supabaseInstance = null;
 }
 
-export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
+export async function testSupabaseConnection(rawUrl: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
-    const client = createClient(url, key);
+    let url = (rawUrl || "").trim();
+    if (!url) {
+      return { success: false, message: "Supabase Project URL is empty." };
+    }
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = `https://${url}`;
+    }
+
+    const cleanKey = (key || "").trim();
+    if (!cleanKey) {
+      return { success: false, message: "Supabase Anon / Service Role Key is empty." };
+    }
+
+    const client = createClient(url, cleanKey);
     const { data, error } = await client.from("metaspace_config").select("*").limit(1);
     if (error) {
       const msg = error.message || "";
