@@ -172,6 +172,13 @@ initDatabase().catch((err) => console.warn("Init DB warning:", err));
 
 export const app = express();
 app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Guarantee application/json headers on API endpoints
+app.use("/api", (req, res, next) => {
+  res.setHeader("Content-Type", "application/json");
+  next();
+});
 
 // Helper to call Gemini with optimized low-latency settings
 async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
@@ -390,7 +397,8 @@ Tone and Style:
   // API: Admin Test Resend Email
   app.post("/api/admin/test-email", async (req, res) => {
     try {
-      const { apiKey, recipientEmail } = req.body;
+      const body = req.body || {};
+      const { apiKey, recipientEmail } = body;
       const testHtml = renderMetaspaceEmailTemplate({
         title: "Resend Email Connection Test",
         preheader: "Testing Resend email service configuration for Metaspace Consult",
@@ -410,14 +418,15 @@ Tone and Style:
         res.status(400).json({ success: false, error: result.error });
       }
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error.message || String(error) });
     }
   });
 
   // API: Admin Test Supabase Connection
   app.post("/api/admin/test-db", async (req, res) => {
     try {
-      const { supabaseUrl, supabaseKey } = req.body;
+      const body = req.body || {};
+      const { supabaseUrl, supabaseKey } = body;
       if (!supabaseUrl || !supabaseKey) {
         return res.status(400).json({ success: false, error: "Please provide both Supabase URL and Key." });
       }
@@ -425,7 +434,7 @@ Tone and Style:
       const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
       res.json(result);
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error.message || String(error) });
     }
   });
 
