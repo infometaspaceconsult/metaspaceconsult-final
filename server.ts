@@ -197,6 +197,26 @@ async function sendResendNotification(subject: string, htmlContent: string, over
 initDatabase().catch((err) => console.warn("Init DB warning:", err));
 
 export const app = express();
+
+// Enable CORS for Vercel & custom domain cross-origin calls
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+
+// Normalize Vercel Serverless URL path if present
+app.use((req, res, next) => {
+  if (req.url && req.url.startsWith("/api/index")) {
+    req.url = req.url.replace(/^\/api\/index(\.ts|\.js)?/, "/api");
+  }
+  next();
+});
+
 app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
@@ -800,6 +820,11 @@ Tone and Style:
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Handle unmatched API endpoints with JSON 404
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
   });
 
   // Serve static assets / Vite middleware

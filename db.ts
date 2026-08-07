@@ -52,19 +52,22 @@ export interface SiteConfig {
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient | null {
-  let url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  let url = "";
+  let key = "";
+
+  try {
+    const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
+    if (fileConf?.supabase_url && fileConf?.supabase_key) {
+      url = fileConf.supabase_url;
+      key = fileConf.supabase_key;
+    }
+  } catch {
+    // Ignore read error during boot
+  }
 
   if (!url || !key) {
-    try {
-      const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
-      if (fileConf?.supabase_url && fileConf?.supabase_key) {
-        url = fileConf.supabase_url;
-        key = fileConf.supabase_key;
-      }
-    } catch {
-      // Ignore read error during boot
-    }
+    url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
   }
 
   if (url && key) {
@@ -514,40 +517,40 @@ function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
     cyona: "https://www.cynonamediccare.com"
   };
 
-  if (Array.isArray(merged.ventures)) {
-    const hasMetagen = merged.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
-    if (!hasMetagen) {
-      merged.ventures = [DEFAULT_SITE_CONFIG.ventures[0], ...merged.ventures];
-    } else {
-      merged.ventures = merged.ventures.map(v => {
-        if (!v) return v;
-        if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
-          return { ...DEFAULT_SITE_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_SITE_CONFIG.ventures[0].url };
-        }
-        return v;
-      });
+  const defaultVentures = DEFAULT_SITE_CONFIG.ventures || [];
+
+  if (Array.isArray(merged.ventures) && merged.ventures.length > 0) {
+    const existingIds = new Set(merged.ventures.map(v => v?.id));
+    
+    // Ensure all default 5 ventures exist in the list
+    for (const defV of defaultVentures) {
+      if (defV && defV.id && !existingIds.has(defV.id)) {
+        merged.ventures.push(defV);
+      }
     }
 
-    // Ensure all ventures have official URLs
+    // Ensure all ventures have official URLs and full details
     merged.ventures = merged.ventures.map(v => {
       if (!v) return v;
+      const matchingDef = defaultVentures.find(d => d.id === v.id);
       const fallbackUrl = defaultUrls[v.id] || "https://www.metaspaceconsult.com";
-      if (!v.url || v.url.trim() === "") {
-        return { ...v, url: fallbackUrl };
-      }
-      return v;
+      return {
+        ...(matchingDef || {}),
+        ...v,
+        url: v.url && v.url.trim() !== "" ? v.url : (matchingDef?.url || fallbackUrl)
+      };
     });
   } else {
-    merged.ventures = DEFAULT_SITE_CONFIG.ventures;
+    merged.ventures = defaultVentures;
   }
 
   if (Array.isArray(merged.footer_ventures_links)) {
-    const hasMetagenLink = merged.footer_ventures_links.some(l => l && l.label && l.label.toLowerCase().includes('metagen'));
-    if (!hasMetagenLink) {
-      merged.footer_ventures_links = [
-        { label: "MetaGen Project", tab: "ventures" },
-        ...merged.footer_ventures_links
-      ];
+    const defaultLinks = DEFAULT_SITE_CONFIG.footer_ventures_links || [];
+    const existingLabels = new Set(merged.footer_ventures_links.map(l => l?.label));
+    for (const defL of defaultLinks) {
+      if (defL && defL.label && !existingLabels.has(defL.label)) {
+        merged.footer_ventures_links.push(defL);
+      }
     }
   } else {
     merged.footer_ventures_links = DEFAULT_SITE_CONFIG.footer_ventures_links;
