@@ -221,6 +221,60 @@ const DEFAULT_CONFIG = {
   ]
 };
 
+function ensureConfigIntegrity(config: any): any {
+  if (!config || typeof config !== "object") return DEFAULT_CONFIG;
+  const merged = { ...DEFAULT_CONFIG, ...config };
+
+  const defaultUrls: Record<string, string> = {
+    metagen: "https://www.metaspaceconsult.com/metagen",
+    ugbekun: "https://www.metaspaceconsult.com/ugbekun",
+    oghowa: "https://www.metaspaceconsult.com/oghowa",
+    eduride: "https://www.myeduride.com",
+    cyona: "https://www.cynonamediccare.com"
+  };
+
+  if (Array.isArray(merged.ventures)) {
+    const hasMetagen = merged.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+    if (!hasMetagen) {
+      merged.ventures = [DEFAULT_CONFIG.ventures[0], ...merged.ventures];
+    } else {
+      merged.ventures = merged.ventures.map(v => {
+        if (!v) return v;
+        if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
+          return { ...DEFAULT_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_CONFIG.ventures[0].url };
+        }
+        return v;
+      });
+    }
+
+    // Ensure all ventures have official URLs and complete properties
+    merged.ventures = merged.ventures.map((v: any) => {
+      if (!v) return v;
+      const fallbackUrl = defaultUrls[v.id] || "https://www.metaspaceconsult.com";
+      return {
+        ...v,
+        url: v.url && v.url.trim() !== "" ? v.url : fallbackUrl
+      };
+    });
+  } else {
+    merged.ventures = DEFAULT_CONFIG.ventures;
+  }
+
+  if (Array.isArray(merged.footer_ventures_links)) {
+    const hasMetagenLink = merged.footer_ventures_links.some(l => l && l.label && l.label.toLowerCase().includes('metagen'));
+    if (!hasMetagenLink) {
+      merged.footer_ventures_links = [
+        { label: "MetaGen Project", tab: "ventures" },
+        ...merged.footer_ventures_links
+      ];
+    }
+  } else {
+    merged.footer_ventures_links = DEFAULT_CONFIG.footer_ventures_links;
+  }
+
+  return merged;
+}
+
 // Initialize localStorage if needed
 function getLocalConfig() {
   const local = localStorage.getItem("metaspace_site_config");
@@ -229,8 +283,12 @@ function getLocalConfig() {
     return DEFAULT_CONFIG;
   }
   try {
-    return JSON.parse(local);
+    const parsed = JSON.parse(local);
+    const verified = ensureConfigIntegrity(parsed);
+    localStorage.setItem("metaspace_site_config", JSON.stringify(verified));
+    return verified;
   } catch (err) {
+    localStorage.setItem("metaspace_site_config", JSON.stringify(DEFAULT_CONFIG));
     return DEFAULT_CONFIG;
   }
 }
