@@ -149,6 +149,9 @@ async function sendResendNotification(subject: string, htmlContent: string, over
       };
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -160,15 +163,31 @@ async function sendResendNotification(subject: string, htmlContent: string, over
         to: [recipient],
         subject: subject,
         html: htmlContent
-      })
+      }),
+      signal: controller.signal
+    }).catch((fetchErr) => {
+      clearTimeout(timeoutId);
+      throw fetchErr;
     });
 
-    const data = await response.json();
+    clearTimeout(timeoutId);
+
+    const rawText = await response.text().catch(() => "");
+    let data: any = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = { message: rawText };
+    }
+
     if (!response.ok) {
-      return { success: false, error: data.message || data.error || JSON.stringify(data) };
+      return { success: false, error: data.message || data.error || `Resend API Error (HTTP ${response.status}): ${rawText || response.statusText}` };
     }
     return { success: true, data };
   } catch (err: any) {
+    if (err.name === "AbortError") {
+      return { success: false, error: "Resend API connection timed out after 8 seconds." };
+    }
     console.warn("Resend email notification failed:", err);
     return { success: false, error: err.message || String(err) };
   }

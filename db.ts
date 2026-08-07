@@ -107,27 +107,48 @@ export async function testSupabaseConnection(rawUrl: string, key: string): Promi
       return { success: false, message: "Supabase Anon / Service Role Key is empty." };
     }
 
-    const client = createClient(url, cleanKey);
-    const { data, error } = await client.from("metaspace_config").select("*").limit(1);
-    if (error) {
-      const msg = error.message || "";
-      if (
-        error.code === "42P01" ||
-        error.code === "PGRST301" ||
-        msg.toLowerCase().includes("not find the table") ||
-        msg.toLowerCase().includes("relation") ||
-        msg.toLowerCase().includes("schema cache")
-      ) {
-        return {
-          success: true,
-          message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; local storage will be used until table is created in Supabase SQL Editor)."
-        };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const restUrl = `${url.replace(/\/+$/, "")}/rest/v1/metaspace_config?select=*&limit=1`;
+      const resp = await fetch(restUrl, {
+        headers: {
+          "apikey": cleanKey,
+          "Authorization": `Bearer ${cleanKey}`
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        return { success: true, message: "Live connection to Supabase database verified successfully!" };
+      } else {
+        const errText = await resp.text().catch(() => "");
+        let errJson: any = {};
+        try { errJson = JSON.parse(errText); } catch {}
+        const msg = errJson.message || errJson.hint || errText || resp.statusText;
+
+        if (resp.status === 404 || msg.includes("not find") || msg.includes("relation") || msg.includes("schema cache") || msg.includes("does not exist")) {
+          return {
+            success: true,
+            message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; run the SQL schema setup in Supabase SQL Editor)."
+          };
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          return { success: false, message: `Supabase Auth Error (${resp.status}): Invalid API Key or Permissions.` };
+        }
+        return { success: false, message: `Supabase Error (${resp.status}): ${msg || "Unable to access table."}` };
       }
-      return { success: false, message: `Supabase Error: ${error.message}` };
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === "AbortError") {
+        return { success: false, message: "Supabase connection timed out after 8 seconds. Please verify the URL." };
+      }
+      return { success: false, message: `Could not reach Supabase endpoint (${url}): ${fetchErr.message || String(fetchErr)}` };
     }
-    return { success: true, message: "Live connection to Supabase database verified successfully!" };
   } catch (err: any) {
-    return { success: false, message: `Failed to connect: ${err.message || String(err)}` };
+    return { success: false, message: `Failed to test Supabase connection: ${err.message || String(err)}` };
   }
 }
 
