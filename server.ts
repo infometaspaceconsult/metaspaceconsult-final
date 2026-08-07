@@ -26,15 +26,23 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Gemini SDK with telemetry header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Lazy initialize Gemini SDK with telemetry header to prevent top-level crash when GEMINI_API_KEY is not set in Vercel
+let aiInstance: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim() === "") return null;
+  if (!aiInstance) {
+    aiInstance = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiInstance;
+}
 
 // Branded HTML Email Template Generator for Metaspace
 function renderMetaspaceEmailTemplate({
@@ -182,6 +190,10 @@ app.use("/api", (req, res, next) => {
 
 // Helper to call Gemini with optimized low-latency settings
 async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error("GEMINI_API_KEY environment variable is not configured.");
+  }
   for (let i = 0; i < retries; i++) {
     try {
       const response = await ai.models.generateContent({

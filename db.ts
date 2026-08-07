@@ -68,14 +68,22 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
 
   if (url && key) {
-    if (!supabaseInstance) {
-      try {
-        supabaseInstance = createClient(url, key);
-      } catch (e) {
-        console.error("Supabase init error:", e);
-      }
+    let cleanUrl = (url || "").trim();
+    if (cleanUrl && !cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+      cleanUrl = `https://${cleanUrl}`;
     }
-    return supabaseInstance;
+    const cleanKey = (key || "").trim();
+
+    if (cleanUrl && cleanKey) {
+      if (!supabaseInstance) {
+        try {
+          supabaseInstance = createClient(cleanUrl, cleanKey);
+        } catch (e) {
+          console.error("Supabase init error:", e);
+        }
+      }
+      return supabaseInstance;
+    }
   }
   return null;
 }
