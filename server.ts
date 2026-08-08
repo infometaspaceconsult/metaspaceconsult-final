@@ -832,7 +832,8 @@ Tone and Style:
   app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
   async function startServer() {
-    if (!process.env.VERCEL) {
+    const isVercelEnvironment = !!process.env.VERCEL || !!process.env.VERCEL_ENV || !!process.env.NOW_BUILDER || process.env.VERCEL_URL !== undefined;
+    if (!isVercelEnvironment) {
       if (process.env.NODE_ENV !== "production") {
         const { createServer: createViteServer } = await import("vite");
         const vite = await createViteServer({

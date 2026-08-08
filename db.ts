@@ -503,6 +503,51 @@ export async function initDatabase() {
     }
   } catch (err: any) {
     console.log("Notice: Operating with in-memory & /tmp storage fallback (Vercel Serverless environment).");
+    try {
+      const tmpDataDir = path.join("/tmp", "data");
+      if (!fs.existsSync(tmpDataDir)) {
+        fs.mkdirSync(tmpDataDir, { recursive: true });
+      }
+      const tmpSitePath = path.join(tmpDataDir, "site_config.json");
+      const tmpConsultPath = path.join(tmpDataDir, "consultations.json");
+      const tmpInqPath = path.join(tmpDataDir, "inquiries.json");
+
+      if (!fs.existsSync(tmpSitePath)) {
+        fs.writeFileSync(tmpSitePath, JSON.stringify(DEFAULT_SITE_CONFIG, null, 2), "utf8");
+      }
+      if (!fs.existsSync(tmpConsultPath)) {
+        const initConsults = [
+          {
+            id: "const-1",
+            name: "Dr. Alabi Johnson",
+            email: "alabi@edo-health.org",
+            organization: "Edo Health Initiative",
+            sector: "Healthcare",
+            service: "Digital Transformation",
+            message: "We want to digitize our primary healthcare operations in rural Edo state and are looking for a technical partner.",
+            createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+            status: "scheduled",
+          },
+          {
+            id: "const-2",
+            name: "Amarachi Okafor",
+            email: "ceo@agrotech-africa.com",
+            organization: "AgroTech Africa",
+            sector: "Agriculture / Startups",
+            service: "Venture Design Studio",
+            message: "Interested in incubation through the Oghowa Accelerator for our seed stage supply-chain venture.",
+            createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+            status: "pending",
+          }
+        ];
+        fs.writeFileSync(tmpConsultPath, JSON.stringify(initConsults, null, 2), "utf8");
+      }
+      if (!fs.existsSync(tmpInqPath)) {
+        fs.writeFileSync(tmpInqPath, JSON.stringify([], null, 2), "utf8");
+      }
+    } catch (tmpErr) {
+      console.warn("/tmp storage init warning:", tmpErr);
+    }
   }
 }
 
