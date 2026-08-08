@@ -1,6 +1,6 @@
 {
   "name": "Metaspace Consulting",
-  "description": "Venture design studio and digital transformation company building scalable solutions, enterprises, and ecosystems in Africa.",
+  "description": "Venture design studio and digital transformation platform featuring Our Ventures, Metagen AI, Companion AI chatbot, and a visual Superadmin page builder.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,867 +1,359 @@
-import express from "express";
-import path from "path";
-import dotenv from "dotenv";
-import fs from "fs";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { 
-  initDatabase, 
-  getSiteConfig, 
-  updateSiteConfig, 
-  getConsultations, 
-  addConsultation, 
-  updateConsultationStatus, 
-  deleteConsultation, 
-  getContactInquiries, 
-  addContactInquiry, 
-  deleteContactInquiry,
-  isUsingMySQL,
-  isUsingSupabase,
-  testSupabaseConnection,
-  SiteConfig
-} from "./db";
-import { Consultation, ContactInquiry } from "./src/types";
+import express from 'express';
+import path from 'path';
+import fs from 'fs';
+import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
+import { Resend } from 'resend';
+import { createClient } from '@supabase/supabase-js';
 
-dotenv.config();
+const app = express();
+const PORT = 3000;
 
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
 
-// Lazy initialize Gemini SDK with telemetry header to prevent top-level crash when GEMINI_API_KEY is not set in Vercel
-let aiInstance: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.trim() === "") return null;
-  if (!aiInstance) {
-    aiInstance = new GoogleGenAI({
-      apiKey: apiKey.trim(),
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
-    });
+// Local file storage fallback for site config & leads
+const CONFIG_FILE = path.join(process.cwd(), 'site-config.json');
+const LEADS_FILE = path.join(process.cwd(), 'leads-data.json');
+
+// Initialize Gemini client lazy/safe
+const getGeminiClient = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error('GEMINI_API_KEY environment variable is required');
   }
-  return aiInstance;
-}
-
-// Branded HTML Email Template Generator for Metaspace
-function renderMetaspaceEmailTemplate({
-  title,
-  preheader,
-  fields,
-  message
-}: {
-  title: string;
-  preheader?: string;
-  fields: { label: string; value: string }[];
-  message?: string;
-}) {
-  const fieldsHtml = fields.map(f => `
-    <tr>
-      <td style="padding: 10px 14px; font-weight: 700; color: #0A192F; font-size: 13px; border-bottom: 1px solid #edf2f7; width: 35%;">${f.label}</td>
-      <td style="padding: 10px 14px; color: #2d3748; font-size: 13px; border-bottom: 1px solid #edf2f7;">${f.value}</td>
-    </tr>
-  `).join("");
-
-  return `
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title}</title>
-  </head>
-  <body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-    ${preheader ? `<div style="display: none; max-height: 0px; overflow: hidden;">${preheader}</div>` : ""}
-    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f6f9; padding: 30px 10px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
-            
-            <!-- HEADER -->
-            <tr>
-              <td style="background-color: #0A192F; padding: 28px 32px; text-align: left; border-bottom: 4px solid #D00024;">
-                <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                  <tr>
-                    <td>
-                      <span style="font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: 1.5px; display: block;">METASPACE</span>
-                      <span style="font-size: 9px; font-weight: 700; color: #E61E3E; letter-spacing: 2px; text-transform: uppercase;">CONSULTING LIMITED</span>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
-            <!-- BODY CONTENT -->
-            <tr>
-              <td style="padding: 32px;">
-                <h2 style="margin: 0 0 8px 0; color: #0A192F; font-size: 20px; font-weight: 800;">${title}</h2>
-                <p style="margin: 0 0 24px 0; color: #718096; font-size: 13px; line-height: 1.5;">New transmission received via Metaspace Official Digital Portal.</p>
-                
-                <!-- KEY VALUES TABLE -->
-                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; border-collapse: collapse; margin-bottom: 24px;">
-                  ${fieldsHtml}
-                </table>
-
-                ${message ? `
-                  <div style="margin-top: 20px;">
-                    <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #718096; letter-spacing: 1px;">Message / Scope Details</p>
-                    <div style="background-color: #f1f5f9; border-left: 4px solid #D00024; padding: 16px; border-radius: 4px; color: #1e293b; font-size: 13px; line-height: 1.6; white-space: pre-line;">
-                      ${message}
-                    </div>
-                  </div>
-                ` : ""}
-              </td>
-            </tr>
-
-            <!-- FOOTER -->
-            <tr>
-              <td style="background-color: #0F1E36; padding: 20px 32px; text-align: center; color: #a0aec0; font-size: 11px; border-top: 1px solid #1a2e4c;">
-                <p style="margin: 0 0 4px 0; font-weight: 600; color: #e2e8f0;">Metaspace Consulting Limited</p>
-                <p style="margin: 0;">Building Systems. Empowering People. Transforming Africa.</p>
-              </td>
-            </tr>
-
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-  </html>
-  `;
-}
-
-// Helper for sending email notifications via Resend API
-async function sendResendNotification(subject: string, htmlContent: string, overrideApiKey?: string, overrideRecipient?: string) {
-  try {
-    const config = await getSiteConfig();
-    const apiKey = overrideApiKey || process.env.RESEND_API_KEY || config.resend_api_key;
-    if (!apiKey || apiKey.trim() === "") {
-      return { success: false, error: "No Resend API Key configured in Environment or Site Settings." };
-    }
-    const rawRecipient = overrideRecipient || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
-    const recipient = rawRecipient.trim();
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(recipient)) {
-      return {
-        success: false,
-        error: `Invalid recipient email format: '${recipient}'. Please enter a valid email address (e.g. info@metaspaceconsulting.com).`
-      };
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
+  return new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
       headers: {
-        "Authorization": `Bearer ${apiKey.trim()}`,
-        "Content-Type": "application/json"
+        'User-Agent': 'aistudio-build',
       },
-      body: JSON.stringify({
-        from: "Metaspace Notifications <onboarding@resend.dev>",
-        to: [recipient],
-        subject: subject,
-        html: htmlContent
-      }),
-      signal: controller.signal
-    }).catch((fetchErr) => {
-      clearTimeout(timeoutId);
-      throw fetchErr;
+    },
+  });
+};
+
+// Initialize Resend lazy
+const getResendClient = () => {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  return new Resend(key);
+};
+
+// Initialize Supabase lazy
+const getSupabaseClient = () => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
+};
+
+// Helper: load leads
+const getStoredLeads = (): any[] => {
+  try {
+    if (fs.existsSync(LEADS_FILE)) {
+      const data = fs.readFileSync(LEADS_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading leads file:', err);
+  }
+  return [];
+};
+
+// Helper: save leads
+const saveStoredLeads = (leads: any[]) => {
+  try {
+    fs.writeFileSync(LEADS_FILE, JSON.stringify(leads, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Error writing leads file:', err);
+  }
+};
+
+// --- API ENDPOINTS ---
+
+// 1. Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: {
+      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      hasResendKey: !!process.env.RESEND_API_KEY,
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+    },
+  });
+});
+
+// 2. Site Config GET & POST
+app.get('/api/site-config', (req, res) => {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const configData = fs.readFileSync(CONFIG_FILE, 'utf8');
+      return res.json(JSON.parse(configData));
+    }
+  } catch (err) {
+    console.error('Error reading site config file:', err);
+  }
+  res.json({ config: null });
+});
+
+app.post('/api/site-config', (req, res) => {
+  try {
+    const { config } = req.body;
+    if (!config) {
+      return res.status(400).json({ error: 'Config object required' });
+    }
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    res.json({ success: true, message: 'Site configuration updated' });
+  } catch (err) {
+    console.error('Error saving site config:', err);
+    res.status(500).json({ error: 'Failed to save configuration' });
+  }
+});
+
+// 3. Superadmin Login
+app.post('/api/admin/login', (req, res) => {
+  const { username, password } = req.body;
+  const expectedUser = process.env.SUPERADMIN_USERNAME || 'admin';
+  const expectedPass = process.env.SUPERADMIN_PASSWORD || 'metaspace2026!';
+
+  if (username === expectedUser && password === expectedPass) {
+    return res.json({
+      success: true,
+      token: 'meta_admin_token_' + Date.now(),
+      user: { username: expectedUser, role: 'superadmin' },
+    });
+  } else {
+    return res.status(401).json({ success: false, error: 'Invalid username or password' });
+  }
+});
+
+// 4. Companion Chatbot AI Endpoint (Gemini 3.6 Flash)
+app.post('/api/companion', async (req, res) => {
+  try {
+    const { message, history } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const ai = getGeminiClient();
+
+    const systemPrompt = `You are "Companion", the official AI assistant and instant support concierge for Metaspace Consulting Limited.
+Metaspace Consulting Limited is a venture design studio and digital transformation company building systems, empowering people, and transforming Africa (https://www.metaspaceconsult.com).
+
+Core Knowledge:
+- Tagline: "Building Systems. Empowering People. Transforming Africa."
+- Core Services:
+  1. Venture Design Studio (ideation, rapid prototyping, venture scaling)
+  2. Digital Transformation (enterprise modernization, AI integration)
+  3. Innovation Ecosystem Builder (incubation, founder mentorship, capital access)
+  4. Strategy & Advisory (market policy, venture strategy across Africa)
+  5. Metagen Platform (Metaspace's flagship AI venture synthesis, automated lead generation & market intelligence engine)
+- Our Ventures:
+  - Ugbekun: Smart school management platform streamlining operations & learning outcomes.
+  - Oghowa Accelerator: Startup incubation, mentorship, seed funding access & market connections.
+  - EduRide: Improving student transportation & school logistics safely.
+  - Cyona Medicare: Enhancing elderly care services & healthcare accessibility.
+  - Metagen Engine: AI-powered ecosystem synthesizer for business growth.
+- Contact Details:
+  - Email: info@metaspaceconsulting.com
+  - Location: Benin City, Edo State, Nigeria
+  - Phone: +234 812 345 6789
+  - WhatsApp Support Agent available for difficult, complex or in-person inquiries.
+
+Your Goal:
+- Be extremely polite, professional, concise, and helpful.
+- Help website visitors learn about Metaspace, book consultations, and ask about ventures.
+- Perform Automated Lead Generation: If the user expresses interest in partnering, investing, booking a consultation, or learning more, ask for their Name, Email, and Phone number.
+- If the query is complex, custom, or requires human assistance, advise them to connect directly with our WhatsApp Support Agent.
+- Keep your answers nicely formatted and under 150 words.`;
+
+    let formattedHistory = '';
+    if (Array.isArray(history)) {
+      formattedHistory = history
+        .map((h: any) => `${h.sender === 'user' ? 'User' : 'Companion'}: ${h.text}`)
+        .slice(-6)
+        .join('\n');
+    }
+
+    const promptText = `${systemPrompt}\n\nRecent Conversation History:\n${formattedHistory}\n\nUser Question: ${message}\nCompanion Response:`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: promptText,
     });
 
-    clearTimeout(timeoutId);
+    const replyText = response.text || "I'm here to help you explore Metaspace Consulting. How can I assist you today?";
 
-    const rawText = await response.text().catch(() => "");
-    let data: any = {};
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      data = { message: rawText };
-    }
+    // Detect if user provided contact info in message to capture lead automatically
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    const phoneRegex = /(\+?\d{10,14})/;
+    const emailMatch = message.match(emailRegex);
+    const phoneMatch = message.match(phoneRegex);
 
-    if (!response.ok) {
-      return { success: false, error: data.message || data.error || `Resend API Error (HTTP ${response.status}): ${rawText || response.statusText}` };
-    }
-    return { success: true, data };
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      return { success: false, error: "Resend API connection timed out after 8 seconds." };
-    }
-    console.warn("Resend email notification failed:", err);
-    return { success: false, error: err.message || String(err) };
-  }
-}
+    let leadCaptured = false;
+    if (emailMatch || phoneMatch) {
+      const newLead = {
+        id: 'lead_' + Date.now(),
+        name: 'Chatbot Visitor',
+        email: emailMatch ? emailMatch[0] : 'Not provided',
+        phone: phoneMatch ? phoneMatch[0] : 'Not provided',
+        interest: 'Chatbot Inquiry',
+        message: message,
+        source: 'companion_chatbot',
+        status: 'new',
+        createdAt: new Date().toISOString(),
+      };
 
-// Initialize Database
-initDatabase().catch((err) => console.warn("Init DB warning:", err));
+      const leads = getStoredLeads();
+      leads.unshift(newLead);
+      saveStoredLeads(leads);
+      leadCaptured = true;
 
-export const app = express();
-
-// Enable CORS for Vercel & custom domain cross-origin calls
-app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-admin-password");
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-  next();
-});
-
-// Normalize Vercel Serverless URL path if present
-app.use((req, res, next) => {
-  if (req.url && req.url.startsWith("/api/index")) {
-    req.url = req.url.replace(/^\/api\/index(\.ts|\.js)?/, "/api");
-  }
-  next();
-});
-
-app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-// Guarantee application/json headers on API endpoints
-app.use("/api", (req, res, next) => {
-  res.setHeader("Content-Type", "application/json");
-  next();
-});
-
-// Helper to call Gemini with optimized low-latency settings
-async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
-  const ai = getGeminiClient();
-  if (!ai) {
-    throw new Error("GEMINI_API_KEY environment variable is not configured.");
-  }
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: contents,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.5,
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-        },
-      });
-      return response;
-    } catch (err: any) {
-      console.warn(`Gemini API attempt ${i + 1} failed: ${err.message || err}`);
-      if (i === retries - 1) {
-        throw err; // Propagate error on the final attempt
-      }
-      const delay = initialDelay * Math.pow(2, i);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-}
-
-// Synchronously defined API routes for instant handler registration
-// API 1: Gemini-powered consulting assistant
-  app.post("/api/chat", async (req, res) => {
-    try {
-      const { message, history } = req.body;
-      if (!message) {
-        return res.status(400).json({ error: "Message is required" });
+      // Save to Supabase if configured
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        try {
+          await supabase.from('leads').insert([newLead]);
+        } catch (sErr) {
+          console.error('Supabase lead insert error:', sErr);
+        }
       }
 
-      // Fetch dynamic site config to feed Gemini actual updated details!
-      const siteConfig = await getSiteConfig();
-      const currentVentures = siteConfig.ventures.map(v => `- ${v.name}: ${v.tagline}. ${v.description}`).join("\n");
-      const currentServices = siteConfig.services.map(s => `- ${s.title}: ${s.shortDesc}`).join("\n");
-      const rawWa = siteConfig.whatsapp_number || "+2348123456789";
-      const cleanWa = rawWa.replace(/[^0-9]/g, "");
+      // Send email via Resend if configured
+      const resend = getResendClient();
+      if (resend) {
+        try {
+          await resend.emails.send({
+            from: 'Metaspace AI Companion <leads@metaspaceconsulting.com>',
+            to: ['info@metaspaceconsulting.com'],
+            subject: '⚡ New Lead Captured by Companion Chatbot',
+            html: `<p><strong>New Lead via Companion AI:</strong></p>
+                   <p><strong>Email:</strong> ${newLead.email}</p>
+                   <p><strong>Phone:</strong> ${newLead.phone}</p>
+                   <p><strong>Message:</strong> ${newLead.message}</p>`,
+          });
+        } catch (rErr) {
+          console.error('Resend email error:', rErr);
+        }
+      }
+    }
 
-      const systemInstruction = `
-Your name is "Companion". You are the official AI representative for "Metaspace Consulting Limited", a premium venture design studio and digital transformation company operating across Africa. Your goal is to be professional, welcoming, highly knowledgeable, and helpful.
+    res.json({
+      reply: replyText,
+      leadCaptured,
+    });
+  } catch (error: any) {
+    console.error('Companion Chatbot API Error:', error);
+    res.status(500).json({
+      reply: 'I am currently experiencing a momentary sync issue. Please try again or reach out to our WhatsApp agent directly!',
+      error: error.message,
+    });
+  }
+});
 
-CRITICAL REQUIREMENT:
-You must answer questions based ONLY on the official site information provided below. You are strictly forbidden from answering general inquiries, programming questions, external trivia, or anything outside of Metaspace Consulting Limited's profile.
+// 5. Contact Form / Lead Capture Endpoint
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { name, email, phone, company, interest, message } = req.body;
 
-If a user asks a question that is not directly answered or supported by the site details below, or if you do not have the answer based on this context, you must politely inform them that you do not have that information and direct them to connect with our WhatsApp helpdesk by outputting a link in this format: "Please connect with our WhatsApp helpdesk for support: [WhatsApp Helpdesk](https://wa.me/${cleanWa})".
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Name and email are required' });
+    }
 
-Here is the exact information about Metaspace Consulting Limited:
-- Tagline: "Building Systems. Empowering People. Transforming Africa."
-- Location: ${siteConfig.footer_address || "Benin City, Edo State, Nigeria"}. Operating across Africa.
-- Mission: Designing, building, and scaling innovative ventures and digital solutions that solve real problems and drive sustainable economic transformation across Africa.
+    const newLead = {
+      id: 'lead_' + Date.now(),
+      name,
+      email,
+      phone: phone || '',
+      company: company || '',
+      interest: interest || 'General Inquiry',
+      message: message || '',
+      source: 'contact_form',
+      status: 'new',
+      createdAt: new Date().toISOString(),
+    };
 
-Core Pillars/Offerings:
-${currentServices}
+    // Save locally
+    const leads = getStoredLeads();
+    leads.unshift(newLead);
+    saveStoredLeads(leads);
 
-Flagship Ventures:
-${currentVentures}
-
-Key Stats:
-- 4+ Flagship Ventures
-- 30+ Partners
-- 1000+ Lives Impacted
-- Multiple sectors (Edu-tech, transport, health-tech, incubator, advisory)
-
-Tone and Style:
-- Professional, confident, elegant, and warm.
-- Grounded in African context, highlighting local opportunities and high-impact solutions.
-- Keep responses relatively concise and focused on how Metaspace can help.
-- If a user expresses interest in partnering or booking a consultation, direct them to use the "Book a Consultation" form on the website!
-`;
-
-      // Slice history to the last 4 messages to minimize token processing latency
-      const trimmedHistory = Array.isArray(history) ? history.slice(-4) : [];
-      const contents = trimmedHistory.length > 0 ? [...trimmedHistory, { role: "user", parts: [{ text: message }] }] : message;
-
+    // Save to Supabase if configured
+    const supabase = getSupabaseClient();
+    if (supabase) {
       try {
-        const response = await generateContentWithRetry(contents, systemInstruction);
-        return res.json({ text: response.text });
-      } catch (geminiError: any) {
-        console.error("Gemini API exhausted all retries, initiating dynamic local fallback response...", geminiError);
-        
-        // Dynamic Local Resiliency Fallback based on User message keywords
-        const lowerMsg = message.toLowerCase();
-        let fallbackText = "";
+        await supabase.from('leads').insert([newLead]);
+      } catch (sErr) {
+        console.error('Supabase error:', sErr);
+      }
+    }
 
-        if (lowerMsg.includes("book") || lowerMsg.includes("consult") || lowerMsg.includes("schedule") || lowerMsg.includes("hire") || lowerMsg.includes("partner")) {
-          fallbackText = "Thank you for your interest! To schedule a consultation with our executive team, please use the standard **'Book a Consultation'** form right here on our website. Simply click the red button at the top right, fill in your details, and we'll get right back to you to co-create your next digital system.";
-        } else if (lowerMsg.includes("venture") || lowerMsg.includes("project") || lowerMsg.includes("portfolio") || lowerMsg.includes("build") || lowerMsg.includes("product")) {
-          fallbackText = "Metaspace Consulting Limited is a leading venture builder across Africa. We design, fund, and scale flagship initiatives. Our key ventures include:\n\n" + 
-            siteConfig.ventures.map(v => `• **${v.name}**: ${v.tagline} — ${v.description}`).join("\n") + 
-            "\n\nYou can explore these in depth on the 'Portfolio' section of our website!";
-        } else if (lowerMsg.includes("service") || lowerMsg.includes("pillar") || lowerMsg.includes("capability") || lowerMsg.includes("offer") || lowerMsg.includes("what do you do")) {
-          fallbackText = "We help organizations architect high-scale technology systems. Our primary capabilities are:\n\n" + 
-            siteConfig.services.map(s => `• **${s.title}**: ${s.shortDesc}`).join("\n") + 
-            "\n\nYou can find full details on these in the 'Services' section of our website.";
-        } else if (lowerMsg.includes("contact") || lowerMsg.includes("where") || lowerMsg.includes("location") || lowerMsg.includes("address") || lowerMsg.includes("email") || lowerMsg.includes("phone")) {
-          fallbackText = `Metaspace Consulting Limited is headquartered in ${siteConfig.footer_address || "Benin City, Edo State, Nigeria"}, and operates across Africa. You can send us a message directly via our Contact Inquiry Form located at the bottom of the homepage, or reach our WhatsApp helpdesk: https://wa.me/${cleanWa}`;
-        } else if (lowerMsg.includes("hello") || lowerMsg.includes("hi") || lowerMsg.includes("hey") || lowerMsg.includes("who are you")) {
-          fallbackText = "Hello! Welcome to Metaspace Consulting Limited's Companion. We are a premium venture design studio and digital transformation partner based in Nigeria, operating across Africa. How can I help you explore our services, flagship ventures, or guide you to booking a consultation today?";
-        } else {
-          fallbackText = `I apologize, but as your Companion, I can only answer questions based strictly on Metaspace's official site information. For other questions, please connect directly with our WhatsApp helpdesk: [WhatsApp Helpdesk](https://wa.me/${cleanWa})`;
-        }
-
-        return res.json({ 
-          text: fallbackText, 
-          isFallback: true 
+    // Send email via Resend API
+    let emailSent = false;
+    const resend = getResendClient();
+    if (resend) {
+      try {
+        await resend.emails.send({
+          from: 'Metaspace Website <onboarding@resend.dev>',
+          to: ['info@metaspaceconsulting.com'],
+          subject: `📩 New Consultation Request from ${name} (${interest || 'Metaspace'})`,
+          html: `
+            <div style="font-family: sans-serif; padding: 20px; color: #141B77;">
+              <h2>New Metaspace Inquiry</h2>
+              <p><strong>Name:</strong> ${name}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Phone:</strong> ${phone || 'N/A'}</p>
+              <p><strong>Company:</strong> ${company || 'N/A'}</p>
+              <p><strong>Interest Area:</strong> ${interest || 'N/A'}</p>
+              <p><strong>Message:</strong></p>
+              <blockquote style="background: #f0f8ff; padding: 12px; border-left: 4px solid #E63946;">${message || 'No message provided.'}</blockquote>
+            </div>
+          `,
         });
-      }
-    } catch (error: any) {
-      console.error("General API Error in Chat route:", error);
-      res.status(500).json({
-        error: "We're experiencing heavy traffic. Please try again soon.",
-        details: error.message,
-      });
-    }
-  });
-
-  // API 2: Book a Consultation
-  app.post("/api/consultations", async (req, res) => {
-    try {
-      const { name, email, organization, sector, service, message } = req.body;
-      if (!name || !email || !service || !message) {
-        return res.status(400).json({ error: "Please fill out all required fields (Name, Email, Service, and Message)." });
-      }
-
-      const newConsultation: Consultation = {
-        id: "const-" + Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        organization: organization || "Independent",
-        sector: sector || "Not Specified",
-        service,
-        message,
-        createdAt: new Date().toISOString(),
-        status: "pending",
-      };
-
-      await addConsultation(newConsultation);
-
-      // Trigger email notification via Resend with branded template
-      const emailHtml = renderMetaspaceEmailTemplate({
-        title: "New Consultation Request Received",
-        preheader: `Consultation requested by ${name} for ${service}`,
-        fields: [
-          { label: "Client Name", value: name },
-          { label: "Email Address", value: email },
-          { label: "Organization", value: organization || "Independent" },
-          { label: "Industry Sector", value: sector || "Not Specified" },
-          { label: "Service Pillar", value: service },
-          { label: "Date Submitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
-        ],
-        message: message
-      });
-
-      sendResendNotification(`[New Consultation] ${name} - ${service}`, emailHtml);
-
-      res.status(201).json({ success: true, consultation: newConsultation });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // API 3: Retrieve booked consultations
-  app.get("/api/consultations", async (req, res) => {
-    try {
-      const consultations = await getConsultations();
-      res.json(consultations);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // API 4: Contact Inquiry
-  app.post("/api/contact", async (req, res) => {
-    try {
-      const { name, email, subject, message } = req.body;
-      if (!name || !email || !subject || !message) {
-        return res.status(400).json({ error: "All contact fields are required." });
-      }
-
-      const newInquiry: ContactInquiry = {
-        id: "inq-" + Math.random().toString(36).substr(2, 9),
-        name,
-        email,
-        subject,
-        message,
-        createdAt: new Date().toISOString(),
-      };
-
-      await addContactInquiry(newInquiry);
-
-      // Trigger email notification via Resend with branded template
-      const emailHtml = renderMetaspaceEmailTemplate({
-        title: "New Contact Portal Inquiry Received",
-        preheader: `Inquiry: ${subject} from ${name}`,
-        fields: [
-          { label: "Sender Name", value: name },
-          { label: "Sender Email", value: email },
-          { label: "Inquiry Subject", value: subject },
-          { label: "Date Transmitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
-        ],
-        message: message
-      });
-
-      sendResendNotification(`[Portal Inquiry] ${subject} from ${name}`, emailHtml);
-
-      res.status(201).json({ success: true, inquiry: newInquiry });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // API: Admin Test Resend Email
-  app.post("/api/admin/test-email", async (req, res) => {
-    try {
-      const body = req.body || {};
-      const { apiKey, recipientEmail } = body;
-      const testHtml = renderMetaspaceEmailTemplate({
-        title: "Resend Email Connection Test",
-        preheader: "Testing Resend email service configuration for Metaspace Consult",
-        fields: [
-          { label: "Test Status", value: "SUCCESSFUL 🟢" },
-          { label: "Service Provider", value: "Resend API (v6)" },
-          { label: "Timestamp", value: new Date().toISOString() },
-          { label: "Target Recipient", value: recipientEmail || "Configured Notification Email" }
-        ],
-        message: "This is a test notification confirming that your Resend API Key is active and successfully transmitting branded emails from Metaspace Consulting Limited."
-      });
-
-      const result = await sendResendNotification("Metaspace Resend Test Email", testHtml, apiKey, recipientEmail);
-      if (result.success) {
-        res.json({ success: true, message: "Test email sent successfully via Resend!" });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message || String(error) });
-    }
-  });
-
-  // API: Admin Test Supabase Connection
-  app.post("/api/admin/test-db", async (req, res) => {
-    try {
-      const body = req.body || {};
-      const { supabaseUrl, supabaseKey } = body;
-      if (!supabaseUrl || !supabaseKey) {
-        return res.status(400).json({ success: false, error: "Please provide both Supabase URL and Key." });
-      }
-
-      const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
-      res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message || String(error) });
-    }
-  });
-
-  // API 5: Get Contact Inquiries
-  app.get("/api/contact", async (req, res) => {
-    try {
-      const contactInquiries = await getContactInquiries();
-      res.json(contactInquiries);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Get Site Config
-  app.get("/api/site-config", async (req, res) => {
-    try {
-      const config = await getSiteConfig();
-      // Hide password for security
-      const safeConfig: any = { 
-        ...config,
-        isMySQL: isUsingMySQL(),
-        isSupabase: isUsingSupabase()
-      };
-      delete safeConfig.adminPassword;
-      if (safeConfig.adminUsernames) {
-        safeConfig.adminUsernames = safeConfig.adminUsernames.map((a: any) => ({
-          username: a.username,
-          isSuperadmin: a.isSuperadmin
-        }));
-      }
-      res.json(safeConfig);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Admin Login
-  app.post("/api/admin/login", async (req, res) => {
-    try {
-      const { username, password } = req.body;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-      
-      const admins = config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ];
-
-      const foundUser = admins.find((a: any) => 
-        a.username.toLowerCase() === (username || "superadmin").toLowerCase() && (a.password === password || password === actualPassword)
-      );
-
-      if (foundUser || password === actualPassword) {
-        return res.json({ 
-          success: true, 
-          token: "metaspace-authenticated-token-" + Date.now(),
-          user: {
-            username: foundUser?.username || username || "superadmin",
-            isSuperadmin: foundUser?.isSuperadmin ?? true
-          }
-        });
-      } else {
-        return res.status(401).json({ error: "Invalid username or password." });
-      }
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Admin Change Password
-  app.post("/api/admin/change-password", async (req, res) => {
-    try {
-      const { currentPassword, newPassword, username } = req.body;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      if (currentPassword !== actualPassword) {
-        const admins = config.adminUsernames || [];
-        const matchingUser = admins.find((a: any) => a.username.toLowerCase() === (username || "").toLowerCase() && a.password === currentPassword);
-        if (!matchingUser) {
-          return res.status(401).json({ error: "Current password is incorrect." });
-        }
-      }
-
-      if (!newPassword || newPassword.trim().length < 3) {
-        return res.status(400).json({ error: "New password must be at least 3 characters long." });
-      }
-
-      const updatedAdmins = (config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ]).map((a: any) => {
-        if (!username || a.username.toLowerCase() === (username || "").toLowerCase() || a.isSuperadmin) {
-          return { ...a, password: newPassword };
-        }
-        return a;
-      });
-
-      await updateSiteConfig({
-        adminPassword: newPassword,
-        adminUsernames: updatedAdmins
-      });
-
-      res.json({ success: true, message: "Password updated successfully." });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Admin Users List
-  app.get("/api/admin/users", async (req, res) => {
-    try {
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-      const authHeader = req.headers["x-admin-password"] as string;
-
-      const admins = config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ];
-
-      if (authHeader !== actualPassword && !admins.some((a: any) => a.password === authHeader || authHeader === "admin")) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      const safeAdmins = admins.map((a: any) => ({
-        username: a.username,
-        isSuperadmin: Boolean(a.isSuperadmin)
-      }));
-
-      res.json(safeAdmins);
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Add or Update Admin User
-  app.post("/api/admin/users", async (req, res) => {
-    try {
-      const { password, username: newUsername, password: newPassword, isSuperadmin } = req.body;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      const admins = config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ];
-
-      if (password !== actualPassword && !admins.some((a: any) => a.password === password || password === "admin")) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      if (!newUsername || typeof newUsername !== "string" || newUsername.trim().length < 2) {
-        return res.status(400).json({ error: "Username must be at least 2 characters long." });
-      }
-
-      const cleanUsername = newUsername.trim();
-      const userIndex = admins.findIndex((a: any) => a.username.toLowerCase() === cleanUsername.toLowerCase());
-
-      const userPwd = newPassword && newPassword.trim().length >= 3 ? newPassword.trim() : actualPassword;
-
-      if (userIndex >= 0) {
-        admins[userIndex] = {
-          ...admins[userIndex],
-          username: cleanUsername,
-          password: userPwd,
-          isSuperadmin: isSuperadmin !== undefined ? Boolean(isSuperadmin) : admins[userIndex].isSuperadmin
-        };
-      } else {
-        admins.push({
-          username: cleanUsername,
-          password: userPwd,
-          isSuperadmin: Boolean(isSuperadmin)
-        });
-      }
-
-      const updatesToApply: any = { adminUsernames: admins };
-      if (cleanUsername.toLowerCase() === "superadmin" && newPassword) {
-        updatesToApply.adminPassword = newPassword;
-      }
-
-      await updateSiteConfig(updatesToApply);
-
-      const safeAdmins = admins.map((a: any) => ({
-        username: a.username,
-        isSuperadmin: Boolean(a.isSuperadmin)
-      }));
-
-      res.json({ success: true, users: safeAdmins, message: `Admin account for ${cleanUsername} created/updated.` });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Revoke Admin User Access
-  app.delete("/api/admin/users/:targetUsername", async (req, res) => {
-    try {
-      const { targetUsername } = req.params;
-      const { password } = req.body;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      const admins = config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ];
-
-      if (password !== actualPassword && !admins.some((a: any) => a.password === password || password === "admin")) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      if (targetUsername.toLowerCase() === "superadmin" && admins.filter((a: any) => a.isSuperadmin).length <= 1) {
-        return res.status(400).json({ error: "Cannot revoke the main superadmin account." });
-      }
-
-      const updatedAdmins = admins.filter((a: any) => a.username.toLowerCase() !== targetUsername.toLowerCase());
-
-      if (updatedAdmins.length === 0) {
-        return res.status(400).json({ error: "Cannot delete all admin accounts." });
-      }
-
-      await updateSiteConfig({ adminUsernames: updatedAdmins });
-
-      const safeAdmins = updatedAdmins.map((a: any) => ({
-        username: a.username,
-        isSuperadmin: Boolean(a.isSuperadmin)
-      }));
-
-      res.json({ success: true, users: safeAdmins, message: `Revoked access for ${targetUsername}.` });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Update Site Config (with admin verification)
-  app.post("/api/admin/site-config", async (req, res) => {
-    try {
-      const { password, updates } = req.body;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      if (password !== actualPassword) {
-        const admins = config.adminUsernames || [];
-        const validAdmin = admins.some((a: any) => a.password === password || password === actualPassword);
-        if (!validAdmin && password !== "admin") {
-          return res.status(401).json({ error: "Unauthorized access." });
-        }
-      }
-
-      if (!updates || typeof updates !== "object") {
-        return res.status(400).json({ error: "Invalid updates format." });
-      }
-
-      const updatedConfig = await updateSiteConfig(updates);
-      const safeConfig: any = { ...updatedConfig };
-      delete safeConfig.adminPassword;
-      if (safeConfig.adminUsernames) {
-        safeConfig.adminUsernames = safeConfig.adminUsernames.map((a: any) => ({
-          username: a.username,
-          isSuperadmin: a.isSuperadmin
-        }));
-      }
-      res.json({ success: true, siteConfig: safeConfig });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // NEW: Update Consultation Status (admin)
-  app.patch("/api/admin/consultations/:id", async (req, res) => {
-    try {
-      const { password, status } = req.body;
-      const { id } = req.params;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      if (password !== actualPassword) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      const success = await updateConsultationStatus(id, status);
-      if (success) {
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ error: "Consultation not found." });
-      }
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // NEW: Delete Consultation (admin)
-  app.delete("/api/admin/consultations/:id", async (req, res) => {
-    try {
-      const { password } = req.body;
-      const { id } = req.params;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      if (password !== actualPassword) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      const success = await deleteConsultation(id);
-      if (success) {
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ error: "Consultation not found." });
-      }
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // NEW: Delete Inquiry (admin)
-  app.delete("/api/admin/contact/:id", async (req, res) => {
-    try {
-      const { password } = req.body;
-      const { id } = req.params;
-      const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
-
-      if (password !== actualPassword) {
-        return res.status(401).json({ error: "Unauthorized access." });
-      }
-
-      const success = await deleteContactInquiry(id);
-      if (success) {
-        res.json({ success: true });
-      } else {
-        res.status(404).json({ error: "Inquiry not found." });
-      }
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  // Handle unmatched API endpoints with JSON 404
-  app.use("/api/*", (req, res) => {
-    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
-  });
-
-  // Serve static assets / Vite middleware
-  app.use("/data", express.static(path.join(process.cwd(), "data")));
-  app.use("/assets", express.static(path.join(process.cwd(), "assets")));
-
-  async function startServer() {
-    const isVercelEnvironment = !!process.env.VERCEL || !!process.env.VERCEL_ENV || !!process.env.NOW_BUILDER || process.env.VERCEL_URL !== undefined;
-    if (!isVercelEnvironment) {
-      if (process.env.NODE_ENV !== "production") {
-        const { createServer: createViteServer } = await import("vite");
-        const vite = await createViteServer({
-          server: { middlewareMode: true },
-          appType: "spa",
-        });
-        app.use(vite.middlewares);
-      } else {
-        const distPath = path.join(process.cwd(), "dist");
-        app.use(express.static(distPath));
-        app.get("*", (req, res) => {
-          res.sendFile(path.join(distPath, "index.html"));
-        });
-      }
-
-      const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
-      if (isPipe) {
-        app.listen(PORT, () => {
-          console.log(`Server running on Unix socket: ${PORT}`);
-        });
-      } else {
-        app.listen(Number(PORT), "0.0.0.0", () => {
-          console.log(`Server running on http://0.0.0.0:${PORT}`);
-        });
+        emailSent = true;
+      } catch (rErr) {
+        console.error('Resend dispatch error:', rErr);
       }
     }
+
+    res.json({
+      success: true,
+      message: 'Thank you! Your message has been received. Our team will contact you shortly.',
+      lead: newLead,
+      emailSent,
+    });
+  } catch (err: any) {
+    console.error('Contact endpoint error:', err);
+    res.status(500).json({ error: 'Failed to process inquiry' });
   }
+});
+
+// 6. Superadmin Get Leads
+app.get('/api/leads', (req, res) => {
+  const leads = getStoredLeads();
+  res.json({ leads });
+});
+
+// Start Express Server with Vite Middleware
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
 
 startServer();
-
-export default app;
