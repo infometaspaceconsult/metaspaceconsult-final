@@ -7,9 +7,20 @@ import { Resend } from 'resend';
 import { createClient } from '@supabase/supabase-js';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+
+// Global JSON Content-Type Middleware for API routes
+app.use('/api', (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+});
+
+// Helper: safe JSON response
+const sendJsonError = (res: express.Response, statusCode: number, message: string) => {
+  return res.status(statusCode).json({ success: false, error: message, message });
+};
 
 // Local file storage fallback for site config & leads
 const CONFIG_FILE = path.join(process.cwd(), 'site-config.json');
@@ -338,9 +349,11 @@ app.get('/api/leads', (req, res) => {
 // 7. Test Supabase Database Connection
 app.post('/api/admin/test-db', async (req, res) => {
   try {
-    const { supabaseUrl, supabaseKey } = req.body;
+    const supabaseUrl = req.body.supabaseUrl || process.env.SUPABASE_URL;
+    const supabaseKey = req.body.supabaseKey || process.env.SUPABASE_ANON_KEY;
+
     if (!supabaseUrl || !supabaseKey) {
-      return res.status(400).json({ success: false, message: 'Supabase URL and Key are required.' });
+      return sendJsonError(res, 400, 'Supabase URL and Key are required.');
     }
 
     const testClient = createClient(supabaseUrl, supabaseKey);
@@ -355,31 +368,29 @@ app.post('/api/admin/test-db', async (req, res) => {
           message: 'Connected successfully to Supabase Cloud Instance! (Note: "leads" table can be created automatically on first submission).'
         });
       }
-      return res.status(400).json({
-        success: false,
-        message: `Supabase Error (${error.code || 'ERR'}): ${error.message}`
-      });
+      return sendJsonError(res, 400, `Supabase Error (${error.code || 'ERR'}): ${error.message}`);
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Connected successfully to Supabase Cloud Database! 🟢 All credentials validated.'
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: `Connection exception: ${err.message || 'Failed to reach Supabase server.'}` });
+    return sendJsonError(res, 500, `Connection exception: ${err.message || 'Failed to reach Supabase server.'}`);
   }
 });
 
 // 8. Test Resend Email Delivery
 app.post('/api/admin/test-email', async (req, res) => {
   try {
-    const { apiKey, recipientEmail } = req.body;
+    const apiKey = req.body.apiKey || process.env.RESEND_API_KEY;
+    const target = req.body.recipientEmail || 'info@metaspaceconsulting.com';
+
     if (!apiKey) {
-      return res.status(400).json({ success: false, error: 'Resend API key is required.' });
+      return sendJsonError(res, 400, 'Resend API key is required.');
     }
 
     const testResend = new Resend(apiKey);
-    const target = recipientEmail || 'info@metaspaceconsulting.com';
 
     const result = await testResend.emails.send({
       from: 'Metaspace Test <onboarding@resend.dev>',
@@ -395,15 +406,15 @@ app.post('/api/admin/test-email', async (req, res) => {
     });
 
     if (result.error) {
-      return res.status(400).json({ success: false, error: `Resend Error: ${result.error.message}` });
+      return sendJsonError(res, 400, `Resend Error: ${result.error.message}`);
     }
 
-    res.json({
+    return res.json({
       success: true,
       message: `Test email successfully transmitted to ${target} via Resend API (ID: ${result.data?.id || 'OK'}).`
     });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: `Transmission Error: ${err.message || 'Failed to communicate with Resend API.'}` });
+    return sendJsonError(res, 500, `Transmission Error: ${err.message || 'Failed to communicate with Resend API.'}`);
   }
 });
 
@@ -423,9 +434,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
