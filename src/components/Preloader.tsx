@@ -175,9 +175,15 @@ export function Preloader({ onComplete, isTabTransition = false, logoUrl }: Prel
                 style={{ animationDelay: "-2s", opacity: 0.1 }}
               />
               <g className="logo-group">
-                {/* Metaspace Logo */}
+                {/* Metaspace Logo Icon */}
                 <foreignObject x="172" y="32" width="56" height="56">
-                  <MetaspaceLogo size="md" showSubtitle={false} className="rounded-full shadow-md bg-white border border-gray-100 p-1" />
+                  <div className="w-[56px] h-[56px] rounded-full shadow-md bg-white border border-gray-100 p-1 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={logoUrl || "/baboon-icon.svg"}
+                      alt="Metaspace Logo"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  </div>
                 </foreignObject>
               </g>
             </svg>

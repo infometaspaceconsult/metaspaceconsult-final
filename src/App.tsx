@@ -181,9 +181,13 @@ export default function App() {
               return (
                 <section key={sectionKey} className="py-12 bg-[#f5faff]">
                   <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="bg-[#141B77] text-white rounded-2xl p-8 sm:p-12 shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
-                      <div className="flex items-center gap-6">
-                        <div className="w-16 h-16 bg-[#E63946] rounded-xl flex items-center justify-center font-extrabold text-2xl text-white shrink-0 shadow-md">
+                    <div className="relative bg-[#141B77]/95 backdrop-blur-md border border-white/10 hover:border-red-500/30 text-white rounded-2xl p-8 sm:p-12 shadow-2xl hover:shadow-red-900/20 flex flex-col md:flex-row items-center justify-between gap-8 transform hover:scale-[1.01] transition-all duration-300 group overflow-hidden">
+                      {/* Ambient Glowing Background Effect */}
+                      <div className="absolute -top-24 -right-24 w-64 h-64 bg-[#E63946]/20 rounded-full blur-3xl pointer-events-none group-hover:bg-[#E63946]/30 transition-all duration-500" />
+                      <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+                      <div className="flex items-center gap-6 relative z-10">
+                        <div className="w-16 h-16 bg-[#E63946] rounded-xl flex items-center justify-center font-extrabold text-2xl text-white shrink-0 shadow-lg group-hover:scale-105 transition-transform duration-300">
                           M
                         </div>
                         <div>
@@ -198,7 +202,7 @@ export default function App() {
 
                       <button
                         onClick={() => openConsultation('Venture Design Studio')}
-                        className="px-8 py-4 bg-[#E63946] hover:bg-red-600 text-white font-bold text-xs uppercase tracking-widest rounded-md shrink-0 transition shadow-lg cursor-pointer"
+                        className="relative z-10 px-8 py-4 bg-[#E63946] hover:bg-red-600 text-white font-bold text-xs uppercase tracking-widest rounded-md shrink-0 transition-all duration-300 shadow-lg hover:shadow-red-600/30 transform hover:-translate-y-0.5 cursor-pointer"
                       >
                         Book a Consultation
                       </button>

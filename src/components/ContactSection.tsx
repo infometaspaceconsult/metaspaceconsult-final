@@ -60,30 +60,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   return (
     <section id="contact" className="py-20 bg-white relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Banner CTA Card (Matching image 1 bottom block) */}
-        <div className="bg-[#141B77] text-white rounded-2xl p-8 sm:p-12 mb-16 shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="flex items-center gap-6">
-            <div className="w-16 h-16 bg-[#E63946] rounded-xl flex items-center justify-center font-extrabold text-2xl text-white shrink-0 shadow-md">
-              M
-            </div>
-            <div>
-              <h3 className="text-2xl sm:text-3xl font-extrabold leading-tight">
-                Let's build something extraordinary together.
-              </h3>
-              <p className="text-slate-300 text-sm sm:text-base mt-2">
-                Whether you're a government, investor, organization, or entrepreneur, we're ready to partner with you.
-              </p>
-            </div>
-          </div>
-
-          <a
-            href="#booking-form"
-            className="px-8 py-4 bg-[#E63946] hover:bg-red-600 text-white font-bold text-xs uppercase tracking-widest rounded-md shrink-0 transition shadow-lg"
-          >
-            Book a Consultation
-          </a>
-        </div>
-
         {/* Contact Form & Information Split */}
         <div id="booking-form" className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
           {/* Left Info Column */}

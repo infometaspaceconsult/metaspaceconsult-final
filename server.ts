@@ -335,6 +335,78 @@ app.get('/api/leads', (req, res) => {
   res.json({ leads });
 });
 
+// 7. Test Supabase Database Connection
+app.post('/api/admin/test-db', async (req, res) => {
+  try {
+    const { supabaseUrl, supabaseKey } = req.body;
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(400).json({ success: false, message: 'Supabase URL and Key are required.' });
+    }
+
+    const testClient = createClient(supabaseUrl, supabaseKey);
+    // Simple query test or health check ping
+    const { data, error } = await testClient.from('leads').select('count', { count: 'exact', head: true });
+
+    if (error && error.code !== 'PGRST116') {
+      // If table doesn't exist yet, client is still connected to Supabase
+      if (error.message && error.message.includes('relation "public.leads" does not exist')) {
+        return res.json({
+          success: true,
+          message: 'Connected successfully to Supabase Cloud Instance! (Note: "leads" table can be created automatically on first submission).'
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Supabase Error (${error.code || 'ERR'}): ${error.message}`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Connected successfully to Supabase Cloud Database! 🟢 All credentials validated.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: `Connection exception: ${err.message || 'Failed to reach Supabase server.'}` });
+  }
+});
+
+// 8. Test Resend Email Delivery
+app.post('/api/admin/test-email', async (req, res) => {
+  try {
+    const { apiKey, recipientEmail } = req.body;
+    if (!apiKey) {
+      return res.status(400).json({ success: false, error: 'Resend API key is required.' });
+    }
+
+    const testResend = new Resend(apiKey);
+    const target = recipientEmail || 'info@metaspaceconsulting.com';
+
+    const result = await testResend.emails.send({
+      from: 'Metaspace Test <onboarding@resend.dev>',
+      to: [target],
+      subject: '⚡ Metaspace System Dispatch Test',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 24px; background: #f5faff; border-radius: 12px; color: #141B77;">
+          <h2 style="color: #E63946;">Metaspace Email Dispatch Verified</h2>
+          <p>This is an automated test message dispatched from your Metaspace Admin Console via the Resend API.</p>
+          <p>Timestamp: <strong>${new Date().toLocaleString()}</strong></p>
+        </div>
+      `,
+    });
+
+    if (result.error) {
+      return res.status(400).json({ success: false, error: `Resend Error: ${result.error.message}` });
+    }
+
+    res.json({
+      success: true,
+      message: `Test email successfully transmitted to ${target} via Resend API (ID: ${result.data?.id || 'OK'}).`
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: `Transmission Error: ${err.message || 'Failed to communicate with Resend API.'}` });
+  }
+});
+
 // Start Express Server with Vite Middleware
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
