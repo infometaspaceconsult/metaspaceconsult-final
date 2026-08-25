@@ -1,7 +1,16 @@
 import React from "react";
 import { Mail, Phone, MapPin, Linkedin, Twitter, Facebook, Instagram, ShieldCheck } from "lucide-react";
-import { TabType } from "../types";
+import { TabType, Venture } from "../types";
 import MetaspaceLogo from "./MetaspaceLogo";
+
+export const DEFAULT_NAV_ITEMS: { id: TabType; label: string }[] = [
+  { id: "home", label: "Home" },
+  { id: "about", label: "About Us" },
+  { id: "what-we-do", label: "What We Do" },
+  { id: "ventures", label: "Our Ventures" },
+  { id: "insights", label: "Insights" },
+  { id: "contact", label: "Contact Us" }
+];
 
 interface FooterProps {
   setCurrentTab: (tab: TabType) => void;
@@ -18,6 +27,8 @@ interface FooterProps {
   footerInstagram?: string;
   footerQuickLinks?: { label: string; tab: string }[];
   footerVenturesLinks?: { label: string; tab: string }[];
+  ventures?: Venture[];
+  navTabs?: { id: TabType; label: string }[];
 }
 
 export default function Footer({
@@ -35,27 +46,38 @@ export default function Footer({
   footerInstagram = "https://instagram.com/metaspace",
   footerQuickLinks,
   footerVenturesLinks,
+  ventures,
+  navTabs = DEFAULT_NAV_ITEMS,
 }: FooterProps) {
   const currentYear = new Date().getFullYear();
 
-  const defaultQuickLinks = [
-    { label: "About Us", tab: "about" },
-    { label: "What We Do", tab: "what-we-do" },
-    { label: "Our Ventures", tab: "ventures" },
-    { label: "Insights", tab: "insights" },
-    { label: "Contact Us", tab: "contact" }
-  ];
+  // Dynamically generate quick links from navigation items state or custom override
+  const quickLinksToRender: { label: string; tab: TabType }[] = 
+    footerQuickLinks && footerQuickLinks.length > 0
+      ? footerQuickLinks.map(link => ({
+          label: link.label,
+          tab: (link.tab as TabType) || "home"
+        }))
+      : navTabs
+          .filter(item => item.id !== "admin")
+          .map(item => ({
+            label: item.label === "Home" ? "Home" : item.label,
+            tab: item.id
+          }));
 
-  const defaultVenturesLinks = [
-    { label: "MetaGen Project", tab: "ventures" },
-    { label: "Ugbekun Platform", tab: "ventures" },
-    { label: "Oghowa Accelerator", tab: "ventures" },
-    { label: "MyEduRide Logistics", tab: "ventures" },
-    { label: "Cyona Medicare", tab: "ventures" }
-  ];
-
-  const quickLinksToRender = footerQuickLinks && footerQuickLinks.length > 0 ? footerQuickLinks : defaultQuickLinks;
-  const venturesLinksToRender = footerVenturesLinks && footerVenturesLinks.length > 0 ? footerVenturesLinks : defaultVenturesLinks;
+  // Dynamically generate ventures links from loaded ventures state or custom override
+  const venturesLinksToRender = 
+    footerVenturesLinks && footerVenturesLinks.length > 0
+      ? footerVenturesLinks
+      : (ventures && ventures.length > 0
+          ? ventures.map(v => ({ label: v.name, tab: "ventures" }))
+          : [
+              { label: "MetaGen Project", tab: "ventures" },
+              { label: "Ugbekun Platform", tab: "ventures" },
+              { label: "Oghowa Accelerator", tab: "ventures" },
+              { label: "MyEduRide Logistics", tab: "ventures" },
+              { label: "Cyona Medicare", tab: "ventures" }
+            ]);
 
   const Logo = () => (
     <div className="flex items-center space-x-2.5 cursor-pointer" onClick={() => setCurrentTab("home")}>

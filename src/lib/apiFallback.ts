@@ -218,8 +218,108 @@ const DEFAULT_CONFIG = {
         metric: "Policy Draft Supported"
       }
     }
+  ],
+  clientLogos: [
+    {
+      id: "client-1",
+      name: "Edo Innovates",
+      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-2",
+      name: "Ugbekun Educational Trust",
+      logoUrl: "https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-3",
+      name: "Cyona Health Systems",
+      logoUrl: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-4",
+      name: "EduRide Mobility Hub",
+      logoUrl: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-5",
+      name: "Oghowa Tech Labs",
+      logoUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-6",
+      name: "Pan-African Digital Labs",
+      logoUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-7",
+      name: "Zenith Capital & Tech",
+      logoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-8",
+      name: "Silicon Lagoon Alliance",
+      logoUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
+    }
   ]
 };
+
+function ensureConfigIntegrity(config: any): any {
+  if (!config || typeof config !== "object") return DEFAULT_CONFIG;
+  const merged = { ...DEFAULT_CONFIG, ...config };
+
+  if (!Array.isArray(merged.clientLogos) || merged.clientLogos.length === 0) {
+    merged.clientLogos = DEFAULT_CONFIG.clientLogos;
+  }
+
+  const defaultUrls: Record<string, string> = {
+    metagen: "https://www.metaspaceconsult.com/metagen",
+    ugbekun: "https://www.metaspaceconsult.com/ugbekun",
+    oghowa: "https://www.metaspaceconsult.com/oghowa",
+    eduride: "https://www.myeduride.com",
+    cyona: "https://www.cynonamediccare.com"
+  };
+
+  if (Array.isArray(merged.ventures)) {
+    const hasMetagen = merged.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+    if (!hasMetagen) {
+      merged.ventures = [DEFAULT_CONFIG.ventures[0], ...merged.ventures];
+    } else {
+      merged.ventures = merged.ventures.map(v => {
+        if (!v) return v;
+        if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
+          return { ...DEFAULT_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_CONFIG.ventures[0].url };
+        }
+        return v;
+      });
+    }
+
+    // Ensure all ventures have official URLs and complete properties
+    merged.ventures = merged.ventures.map((v: any) => {
+      if (!v) return v;
+      const fallbackUrl = defaultUrls[v.id] || "https://www.metaspaceconsult.com";
+      return {
+        ...v,
+        url: v.url && v.url.trim() !== "" ? v.url : fallbackUrl
+      };
+    });
+  } else {
+    merged.ventures = DEFAULT_CONFIG.ventures;
+  }
+
+  if (Array.isArray(merged.footer_ventures_links)) {
+    const hasMetagenLink = merged.footer_ventures_links.some(l => l && l.label && l.label.toLowerCase().includes('metagen'));
+    if (!hasMetagenLink) {
+      merged.footer_ventures_links = [
+        { label: "MetaGen Project", tab: "ventures" },
+        ...merged.footer_ventures_links
+      ];
+    }
+  } else {
+    merged.footer_ventures_links = DEFAULT_CONFIG.footer_ventures_links;
+  }
+
+  return merged;
+}
 
 // Initialize localStorage if needed
 function getLocalConfig() {
@@ -229,8 +329,12 @@ function getLocalConfig() {
     return DEFAULT_CONFIG;
   }
   try {
-    return JSON.parse(local);
+    const parsed = JSON.parse(local);
+    const verified = ensureConfigIntegrity(parsed);
+    localStorage.setItem("metaspace_site_config", JSON.stringify(verified));
+    return verified;
   } catch (err) {
+    localStorage.setItem("metaspace_site_config", JSON.stringify(DEFAULT_CONFIG));
     return DEFAULT_CONFIG;
   }
 }
@@ -238,6 +342,14 @@ function getLocalConfig() {
 function saveLocalConfig(config: any) {
   localStorage.setItem("metaspace_site_config", JSON.stringify(config));
 }
+
+import { 
+  saveSiteConfigToFirestore, 
+  createConsultationInFirestore, 
+  fetchConsultationsFromFirestore, 
+  createContactInquiryInFirestore, 
+  fetchContactInquiriesFromFirestore 
+} from "./firebase";
 
 // ---------------- API INTERCEPT WRAPPERS ----------------
 
@@ -254,6 +366,13 @@ export async function apiFetchSiteConfig(): Promise<any> {
 }
 
 export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
+  // Sync to Firestore cloud database
+  try {
+    saveSiteConfigToFirestore(updates).catch(e => console.warn("Firestore site_config sync error:", e));
+  } catch (e) {
+    // Non-blocking
+  }
+
   // 1. Try to sync with Server first
   try {
     const pwd = localStorage.getItem("metaspace_admin_password") || "admin";
@@ -283,32 +402,39 @@ export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
 }
 
 export async function apiLoginAdmin(usernameOrPassword: string, passwordInput?: string): Promise<{ success: boolean; token?: string; username?: string; isSuperadmin?: boolean; error?: string }> {
-  const username = passwordInput !== undefined ? usernameOrPassword : "superadmin";
+  const username = passwordInput !== undefined ? (usernameOrPassword || "admin") : "admin";
   const password = passwordInput !== undefined ? passwordInput : usernameOrPassword;
+
+  if (!password || typeof password !== "string" || password.trim() === "") {
+    return { success: false, error: "Password is required to unlock the admin console." };
+  }
+
+  const cleanPassword = password.trim();
+  const cleanUsername = (username || "admin").trim().toLowerCase();
 
   try {
     const res = await fetch("/api/admin/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username: cleanUsername, password: cleanPassword })
     });
     if (res.ok) {
       const data = await res.json();
       return { 
         success: true, 
         token: data.token,
-        username: data.user?.username || username,
+        username: data.user?.username || cleanUsername,
         isSuperadmin: data.user?.isSuperadmin ?? true
       };
     } else {
-      const data = await res.json();
-      return { success: false, error: data.error };
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || "Incorrect administrator credentials." };
     }
   } catch (err) {
     console.warn("Server API admin login failed. Validating client-side.");
     // Fallback comparison
     const config = getLocalConfig();
-    const actualPassword = config.adminPassword || "admin";
+    const actualPassword = (config.adminPassword || "admin").trim();
     
     // Check superadmin/admin fallback
     const admins = config.adminUsernames || [
@@ -317,18 +443,18 @@ export async function apiLoginAdmin(usernameOrPassword: string, passwordInput?: 
     ];
 
     const foundAdmin = admins.find(a => 
-      a.username.toLowerCase() === username.toLowerCase() && (a.password === password || password === actualPassword)
+      (a.username || "").toLowerCase() === cleanUsername && ((a.password || "").trim() === cleanPassword)
     );
 
-    if (foundAdmin || password === actualPassword) {
+    if (foundAdmin || cleanPassword === actualPassword) {
       return { 
         success: true, 
         token: "mock-client-token-" + Date.now(),
-        username: foundAdmin?.username || username || "superadmin",
+        username: foundAdmin?.username || cleanUsername || "admin",
         isSuperadmin: foundAdmin?.isSuperadmin ?? true
       };
     } else {
-      return { success: false, error: "Incorrect admin credentials." };
+      return { success: false, error: "Incorrect administrator password." };
     }
   }
 }
@@ -422,6 +548,13 @@ export async function apiFetchConsultations(): Promise<any[]> {
 }
 
 export async function apiCreateConsultation(booking: any): Promise<boolean> {
+  // Sync to Firestore cloud database
+  try {
+    createConsultationInFirestore(booking).catch(e => console.warn("Firestore consultation write error:", e));
+  } catch (e) {
+    // Non-blocking
+  }
+
   try {
     const res = await fetch("/api/consultations", {
       method: "POST",
@@ -462,6 +595,13 @@ export async function apiFetchInquiries(): Promise<any[]> {
 }
 
 export async function apiCreateInquiry(inquiry: any): Promise<boolean> {
+  // Sync to Firestore cloud database
+  try {
+    createContactInquiryInFirestore(inquiry).catch(e => console.warn("Firestore inquiry write error:", e));
+  } catch (e) {
+    // Non-blocking
+  }
+
   try {
     const res = await fetch("/api/contact", {
       method: "POST",

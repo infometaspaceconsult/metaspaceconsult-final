@@ -1,4 +1,4 @@
-import { Venture, ServiceOffer, InsightPost } from "./types";
+import { Venture, ServiceOffer, InsightPost, ClientLogo } from "./types";
 
 export const VENTURES_DATA: Venture[] = [
   {
@@ -238,5 +238,48 @@ export const TEAM_MEMBERS = [
     role: "Principal Venture Designer",
     bio: "Product strategist and researcher, formerly leading UX and operations at regional mobility and digital health scale-ups across West Africa.",
     avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=150"
+  }
+];
+
+export const CLIENT_LOGOS_DATA: ClientLogo[] = [
+  {
+    id: "client-1",
+    name: "Edo Innovates",
+    logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-2",
+    name: "Ugbekun Educational Trust",
+    logoUrl: "https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-3",
+    name: "Cyona Health Systems",
+    logoUrl: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-4",
+    name: "EduRide Mobility Hub",
+    logoUrl: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-5",
+    name: "Oghowa Tech Labs",
+    logoUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-6",
+    name: "Pan-African Digital Labs",
+    logoUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-7",
+    name: "Zenith Capital & Tech",
+    logoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop"
+  },
+  {
+    id: "client-8",
+    name: "Silicon Lagoon Alliance",
+    logoUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
   }
 ];

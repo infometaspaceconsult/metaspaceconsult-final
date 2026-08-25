@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { 
   initDatabase, 
@@ -26,15 +25,23 @@ dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize Gemini SDK with telemetry header
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
-    },
-  },
-});
+// Lazy initialize Gemini SDK with telemetry header to prevent top-level crash when GEMINI_API_KEY is not set in Vercel
+let aiInstance: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim() === "") return null;
+  if (!aiInstance) {
+    aiInstance = new GoogleGenAI({
+      apiKey: apiKey.trim(),
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiInstance;
+}
 
 // Branded HTML Email Template Generator for Metaspace
 function renderMetaspaceEmailTemplate({
@@ -142,6 +149,9 @@ async function sendResendNotification(subject: string, htmlContent: string, over
       };
     }
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -153,15 +163,31 @@ async function sendResendNotification(subject: string, htmlContent: string, over
         to: [recipient],
         subject: subject,
         html: htmlContent
-      })
+      }),
+      signal: controller.signal
+    }).catch((fetchErr) => {
+      clearTimeout(timeoutId);
+      throw fetchErr;
     });
 
-    const data = await response.json();
+    clearTimeout(timeoutId);
+
+    const rawText = await response.text().catch(() => "");
+    let data: any = {};
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = { message: rawText };
+    }
+
     if (!response.ok) {
-      return { success: false, error: data.message || data.error || JSON.stringify(data) };
+      return { success: false, error: data.message || data.error || `Resend API Error (HTTP ${response.status}): ${rawText || response.statusText}` };
     }
     return { success: true, data };
   } catch (err: any) {
+    if (err.name === "AbortError") {
+      return { success: false, error: "Resend API connection timed out after 8 seconds." };
+    }
     console.warn("Resend email notification failed:", err);
     return { success: false, error: err.message || String(err) };
   }
@@ -171,10 +197,41 @@ async function sendResendNotification(subject: string, htmlContent: string, over
 initDatabase().catch((err) => console.warn("Init DB warning:", err));
 
 export const app = express();
+
+// Enable CORS for Vercel & custom domain cross-origin calls
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-admin-password");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  next();
+});
+
+// Normalize Vercel Serverless URL path if present
+app.use((req, res, next) => {
+  if (req.url && req.url.startsWith("/api/index")) {
+    req.url = req.url.replace(/^\/api\/index(\.ts|\.js)?/, "/api");
+  }
+  next();
+});
+
 app.use(express.json({ limit: "50mb" })); // Support large base64 image uploads
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Guarantee application/json headers on API endpoints
+app.use("/api", (req, res, next) => {
+  res.setHeader("Content-Type", "application/json");
+  next();
+});
 
 // Helper to call Gemini with optimized low-latency settings
 async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
+  const ai = getGeminiClient();
+  if (!ai) {
+    throw new Error("GEMINI_API_KEY environment variable is not configured.");
+  }
   for (let i = 0; i < retries; i++) {
     try {
       const response = await ai.models.generateContent({
@@ -390,7 +447,8 @@ Tone and Style:
   // API: Admin Test Resend Email
   app.post("/api/admin/test-email", async (req, res) => {
     try {
-      const { apiKey, recipientEmail } = req.body;
+      const body = req.body || {};
+      const { apiKey, recipientEmail } = body;
       const testHtml = renderMetaspaceEmailTemplate({
         title: "Resend Email Connection Test",
         preheader: "Testing Resend email service configuration for Metaspace Consult",
@@ -410,14 +468,15 @@ Tone and Style:
         res.status(400).json({ success: false, error: result.error });
       }
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error.message || String(error) });
     }
   });
 
   // API: Admin Test Supabase Connection
   app.post("/api/admin/test-db", async (req, res) => {
     try {
-      const { supabaseUrl, supabaseKey } = req.body;
+      const body = req.body || {};
+      const { supabaseUrl, supabaseKey } = body;
       if (!supabaseUrl || !supabaseKey) {
         return res.status(400).json({ success: false, error: "Please provide both Supabase URL and Key." });
       }
@@ -425,7 +484,44 @@ Tone and Style:
       const result = await testSupabaseConnection(supabaseUrl, supabaseKey);
       res.json(result);
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error.message || String(error) });
+    }
+  });
+
+  // API: Admin Test Custom MySQL Connection
+  app.post("/api/admin/test-mysql", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const { host, port, user, password, database } = body;
+      if (!host || !user || !database) {
+        return res.status(400).json({ success: false, error: "Please provide MySQL Host, User, and Database name." });
+      }
+
+      const mysql = await import("mysql2/promise");
+      const startTime = Date.now();
+      const connection = await mysql.createConnection({
+        host: host.trim(),
+        port: Number(port) || 3306,
+        user: user.trim(),
+        password: password ? String(password) : "",
+        database: database.trim(),
+        connectTimeout: 5000
+      });
+
+      await connection.ping();
+      const [rows] = await connection.query("SELECT 1 as connected");
+      await connection.end();
+
+      const latency = Date.now() - startTime;
+      res.json({
+        success: true,
+        message: `Successfully connected to MySQL database '${database}' on ${host} (${latency}ms latency).`
+      });
+    } catch (error: any) {
+      res.status(400).json({
+        success: false,
+        error: `MySQL Connection Failed: ${error.message || String(error)}`
+      });
     }
   });
 
@@ -465,9 +561,16 @@ Tone and Style:
   // Admin Login
   app.post("/api/admin/login", async (req, res) => {
     try {
-      const { username, password } = req.body;
+      const { username, password } = req.body || {};
+      if (!password || typeof password !== "string" || password.trim() === "") {
+        return res.status(400).json({ error: "Password is required to access the admin console." });
+      }
+
+      const cleanPassword = password.trim();
+      const cleanUsername = (username || "admin").trim().toLowerCase();
+
       const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
+      const actualPassword = (config.adminPassword || "admin").trim();
       
       const admins = config.adminUsernames || [
         { username: "superadmin", password: actualPassword, isSuperadmin: true },
@@ -475,20 +578,22 @@ Tone and Style:
       ];
 
       const foundUser = admins.find((a: any) => 
-        a.username.toLowerCase() === (username || "superadmin").toLowerCase() && (a.password === password || password === actualPassword)
+        (a.username || "").toLowerCase() === cleanUsername && ((a.password || "").trim() === cleanPassword)
       );
 
-      if (foundUser || password === actualPassword) {
+      const isValidPassword = foundUser !== undefined || cleanPassword === actualPassword;
+
+      if (isValidPassword) {
         return res.json({ 
           success: true, 
           token: "metaspace-authenticated-token-" + Date.now(),
           user: {
-            username: foundUser?.username || username || "superadmin",
+            username: foundUser?.username || username || "admin",
             isSuperadmin: foundUser?.isSuperadmin ?? true
           }
         });
       } else {
-        return res.status(401).json({ error: "Invalid username or password." });
+        return res.status(401).json({ error: "Invalid username or administrator password." });
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -763,13 +868,20 @@ Tone and Style:
     }
   });
 
+  // Handle unmatched API endpoints with JSON 404
+  app.use("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl}` });
+  });
+
   // Serve static assets / Vite middleware
   app.use("/data", express.static(path.join(process.cwd(), "data")));
   app.use("/assets", express.static(path.join(process.cwd(), "assets")));
 
   async function startServer() {
-    if (!process.env.VERCEL) {
+    const isVercelEnvironment = !!process.env.VERCEL || !!process.env.VERCEL_ENV || !!process.env.NOW_BUILDER || process.env.VERCEL_URL !== undefined;
+    if (!isVercelEnvironment) {
       if (process.env.NODE_ENV !== "production") {
+        const { createServer: createViteServer } = await import("vite");
         const vite = await createViteServer({
           server: { middlewareMode: true },
           appType: "spa",

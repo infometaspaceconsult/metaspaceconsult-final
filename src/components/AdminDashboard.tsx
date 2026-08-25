@@ -2,20 +2,23 @@ import React, { useState, useEffect } from "react";
 import { 
   ShieldCheck, RefreshCw, Calendar, Mail, FileText, CheckCircle, Clock, 
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
-  Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, AlertCircle,
+  Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, EyeOff, AlertCircle,
   Briefcase, UserPlus, UserCheck, UserX, Users, Database, Send
 } from "lucide-react";
-import { Consultation, ContactInquiry, Venture, ServiceOffer } from "../types";
+import { Consultation, ContactInquiry, Venture, ServiceOffer, ClientLogo } from "../types";
+import { CLIENT_LOGOS_DATA } from "../data";
 import { 
   apiFetchSiteConfig, apiSaveSiteConfig, apiLoginAdmin, 
   apiFetchConsultations, apiFetchInquiries,
   apiFetchAdminUsers, apiAddAdminUser, apiDeleteAdminUser
 } from "../lib/apiFallback";
+import { testFirestoreConnection } from "../lib/firebase";
 
 export default function AdminDashboard() {
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState("");
 
@@ -54,6 +57,7 @@ export default function AdminDashboard() {
 
   const [ventures, setVentures] = useState<Venture[]>([]);
   const [services, setServices] = useState<ServiceOffer[]>([]);
+  const [clientLogos, setClientLogos] = useState<ClientLogo[]>(CLIENT_LOGOS_DATA);
 
   // WhatsApp & Footer dynamic fields
   const [whatsappNumber, setWhatsappNumber] = useState("");
@@ -74,6 +78,18 @@ export default function AdminDashboard() {
   const [newPassword, setNewPassword] = useState("");
 
   // Live DB & Email state
+  const [dbTab, setDbTab] = useState<"firebase" | "supabase" | "mysql">("firebase");
+  const [firestoreTestResult, setFirestoreTestResult] = useState("");
+  const [isTestingFirestore, setIsTestingFirestore] = useState(false);
+
+  const [mysqlHost, setMysqlHost] = useState("");
+  const [mysqlPort, setMysqlPort] = useState("3306");
+  const [mysqlUser, setMysqlUser] = useState("");
+  const [mysqlPassword, setMysqlPassword] = useState("");
+  const [mysqlDatabase, setMysqlDatabase] = useState("");
+  const [mysqlTestResult, setMysqlTestResult] = useState("");
+  const [isTestingMysql, setIsTestingMysql] = useState(false);
+
   const [supabaseUrl, setSupabaseUrl] = useState("");
   const [supabaseKey, setSupabaseKey] = useState("");
   const [isSupabase, setIsSupabase] = useState(false);
@@ -85,39 +101,38 @@ export default function AdminDashboard() {
   const [emailTestResult, setEmailTestResult] = useState("");
   const [isTestingEmail, setIsTestingEmail] = useState(false);
 
-  // Check existing token on mount
+  // Ensure Admin console is locked on load unless authenticated explicitly in current session
   useEffect(() => {
-    const token = localStorage.getItem("metaspace_admin_token");
-    const savedPassword = localStorage.getItem("metaspace_admin_password");
-    const savedUsername = localStorage.getItem("metaspace_admin_username") || "";
-    if (token && savedPassword) {
-      setPassword(savedPassword);
-      setUsername(savedUsername);
-      setIsAuthenticated(true);
-      fetchAdminData(savedPassword);
-    }
+    // Clear legacy auto-login credentials so console is locked securely by default
+    localStorage.removeItem("metaspace_admin_token");
+    localStorage.removeItem("metaspace_admin_password");
+    setIsAuthenticated(false);
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password) return;
+    const cleanPwd = password.trim();
+    if (!cleanPwd) {
+      setAuthError("Please provide the administrator password to unlock the console.");
+      return;
+    }
 
     setIsLoggingIn(true);
     setAuthError("");
 
     try {
-      const result = await apiLoginAdmin(username, password);
+      const cleanUser = (username || "admin").trim();
+      const result = await apiLoginAdmin(cleanUser, cleanPwd);
       if (result.success) {
         setIsAuthenticated(true);
-        localStorage.setItem("metaspace_admin_token", result.token || "mock-token");
-        localStorage.setItem("metaspace_admin_password", password);
-        localStorage.setItem("metaspace_admin_username", username);
-        fetchAdminData(password);
+        setPassword(cleanPwd);
+        setUsername(cleanUser);
+        fetchAdminData(cleanPwd);
       } else {
-        setAuthError(result.error || "Incorrect username or password.");
+        setAuthError(result.error || "Incorrect administrator password. Access denied.");
       }
     } catch (err) {
-      setAuthError("Server connection failed. Try again.");
+      setAuthError("Server connection failed. Please try again.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -129,6 +144,8 @@ export default function AdminDashboard() {
     localStorage.removeItem("metaspace_admin_username");
     setIsAuthenticated(false);
     setPassword("");
+    setAuthError("");
+    setMessage("");
   };
 
   const fetchAdminData = async (pwd = password) => {
@@ -163,6 +180,13 @@ export default function AdminDashboard() {
         setLagosBridgeUrl(d.lagosBridgeUrl || "");
         setVentures(d.ventures || []);
         setServices(d.services || []);
+        if (d.clientLogos && Array.isArray(d.clientLogos) && d.clientLogos.length > 0) {
+          setClientLogos(d.clientLogos);
+        } else if (d.client_logos && Array.isArray(d.client_logos) && d.client_logos.length > 0) {
+          setClientLogos(d.client_logos);
+        } else {
+          setClientLogos(CLIENT_LOGOS_DATA);
+        }
         setIsMySQL(d.isMySQL || false);
         setIsSupabase(d.isSupabase || false);
 
@@ -333,6 +357,55 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleTestFirestore = async () => {
+    setIsTestingFirestore(true);
+    setFirestoreTestResult("Testing connection to Firebase Firestore...");
+    try {
+      const res = await testFirestoreConnection();
+      if (res.success) {
+        setFirestoreTestResult(`🟢 Connected! Database: ${res.databaseId} (Ping: ${res.latencyMs}ms). Collections active: Site Config, Consultations, Contact Inquiries, Ventures.`);
+      } else {
+        setFirestoreTestResult(`🔴 ${res.message}`);
+      }
+    } catch (err: any) {
+      setFirestoreTestResult(`🔴 Firestore error: ${err.message || String(err)}`);
+    } finally {
+      setIsTestingFirestore(false);
+    }
+  };
+
+  const handleTestMySQL = async () => {
+    if (!mysqlHost || !mysqlUser || !mysqlDatabase) {
+      setMysqlTestResult("🔴 Please fill in MySQL Host, User, and Database name before testing.");
+      return;
+    }
+    setIsTestingMysql(true);
+    setMysqlTestResult(`Testing live TCP connection to MySQL server at ${mysqlHost}:${mysqlPort}...`);
+    try {
+      const res = await fetch("/api/admin/test-mysql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: mysqlHost.trim(),
+          port: Number(mysqlPort) || 3306,
+          user: mysqlUser.trim(),
+          password: mysqlPassword,
+          database: mysqlDatabase.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMysqlTestResult(`🟢 ${data.message}`);
+      } else {
+        setMysqlTestResult(`🔴 ${data.error || "MySQL test failed."}`);
+      }
+    } catch (err: any) {
+      setMysqlTestResult(`🔴 Error connecting to MySQL: ${err.message || String(err)}`);
+    } finally {
+      setIsTestingMysql(false);
+    }
+  };
+
   const handleTestSupabase = async () => {
     if (!supabaseUrl || !supabaseKey) {
       setDbTestResult("🔴 Please fill in both Supabase Project URL and Key before testing.");
@@ -346,12 +419,22 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() })
       });
-      const data = await res.json();
+      
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+        setDbTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
+        return;
+      }
+
       if (data.success) {
         setDbTestResult(`🟢 ${data.message}`);
         handleSaveConfig({ supabase_url: supabaseUrl.trim(), supabase_key: supabaseKey.trim() });
       } else {
-        setDbTestResult(`🔴 ${data.message || data.error}`);
+        setDbTestResult(`🔴 ${data.message || data.error || "Database connection test failed."}`);
       }
     } catch (err: any) {
       setDbTestResult(`🔴 Error connecting: ${err.message || String(err)}`);
@@ -376,7 +459,17 @@ export default function AdminDashboard() {
           recipientEmail: notificationEmail || footerEmail || "info@metaspaceconsulting.com"
         })
       });
-      const data = await res.json();
+
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+        setEmailTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
+        return;
+      }
+
       if (data.success) {
         setEmailTestResult(`🟢 ${data.message}`);
         handleSaveConfig({ resend_api_key: resendApiKey.trim(), notification_email: notificationEmail });
@@ -518,6 +611,59 @@ export default function AdminDashboard() {
     setServices(list);
   };
 
+  // CLIENT LOGOS HANDLERS
+  const handleAddClientLogo = () => {
+    const newLogo: ClientLogo = {
+      id: "client-" + Math.random().toString(36).substr(2, 6),
+      name: "New Partner / Client",
+      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop"
+    };
+    const updated = [...clientLogos, newLogo];
+    setClientLogos(updated);
+    handleSaveConfig({ clientLogos: updated });
+    setMessage("New client logo added successfully!");
+  };
+
+  const handleUpdateClientLogoField = (index: number, key: keyof ClientLogo, val: string) => {
+    const list = [...clientLogos];
+    list[index] = { ...list[index], [key]: val };
+    setClientLogos(list);
+  };
+
+  const handleDeleteClientLogo = (index: number) => {
+    const logoName = clientLogos[index]?.name || "this client logo";
+    if (!window.confirm(`Are you sure you want to remove "${logoName}" from the carousel?`)) return;
+    const updated = clientLogos.filter((_, i) => i !== index);
+    setClientLogos(updated);
+    handleSaveConfig({ clientLogos: updated });
+    setMessage(`Removed "${logoName}" from client carousel.`);
+  };
+
+  const handleUploadClientLogoFile = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      const result = loadEvt.target?.result as string;
+      if (result) {
+        const list = [...clientLogos];
+        list[index] = { ...list[index], logoUrl: result };
+        setClientLogos(list);
+        handleSaveConfig({ clientLogos: list });
+        setMessage(`Uploaded custom logo for "${list[index].name}"!`);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetDefaultClientLogos = () => {
+    if (!window.confirm("Reset client logos back to original institutional partners?")) return;
+    setClientLogos(CLIENT_LOGOS_DATA);
+    handleSaveConfig({ clientLogos: CLIENT_LOGOS_DATA });
+    setMessage("Client logos reset to default showcase.");
+  };
+
   // RENDER AUTH SCREEN IF NOT LOGGED IN
   if (!isAuthenticated) {
     return (
@@ -569,21 +715,29 @@ export default function AdminDashboard() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter administrator password"
-                  className="w-full pl-9 pr-3 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
+                  className="w-full pl-9 pr-10 py-3 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-xl focus:bg-white focus:outline-none transition font-semibold"
                 />
                 <KeyRound size={13} className="absolute left-3.5 top-3.5 text-gray-400" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-3 text-gray-400 hover:text-brand-blue transition p-0.5"
+                  title={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={isLoggingIn}
-              className="w-full py-3 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5"
+              className="w-full py-3 bg-brand-blue hover:bg-brand-navy text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {isLoggingIn ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={14} />}
               <span>Sign In to Console</span>
@@ -610,25 +764,32 @@ export default function AdminDashboard() {
             Corporate Operations & Layout Console
           </h2>
           <p className="text-xs text-gray-500 font-sans mt-0.5">
-            Connected database: <strong className="text-brand-blue uppercase">{isMySQL ? "cPanel MySQL Database" : "Local persistent JSON ledger"}</strong>
+            Connected database: <strong className="text-brand-blue uppercase">{isSupabase ? "Supabase Cloud Database (Live 🟢)" : "Local Persistent JSON Ledger (Fallback 🟡)"}</strong>
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50/80 border border-blue-100 rounded-xl text-[11px] font-bold text-brand-blue">
+            <ShieldCheck size={13} className="text-brand-crimson" />
+            <span>Admin: {username || "superadmin"}</span>
+          </div>
+
           <button
             onClick={fetchAdminData}
             disabled={isLoading}
-            className="px-3.5 py-2 bg-white border border-gray-200 text-gray-700 text-[10px] font-bold uppercase tracking-wider rounded-lg shadow-sm hover:bg-gray-50 flex items-center gap-1.5"
+            className="px-3.5 py-2 bg-white border border-gray-200 text-gray-700 text-[10px] font-bold uppercase tracking-wider rounded-xl shadow-xs hover:bg-gray-50 flex items-center gap-1.5 transition cursor-pointer"
           >
             {isLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
             <span>Sync DB</span>
           </button>
+          
           <button
             onClick={handleLogout}
-            className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-brand-crimson border border-red-100 text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1"
+            className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-brand-crimson border border-red-200/80 text-[10px] font-bold uppercase tracking-wider rounded-xl flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+            title="Lock the console immediately"
           >
             <Lock size={12} />
-            <span>Lock</span>
+            <span>Lock Console</span>
           </button>
         </div>
       </div>
@@ -652,7 +813,7 @@ export default function AdminDashboard() {
         {[
           { id: "ledger", label: "Bookings Ledger", icon: <Calendar size={13} /> },
           { id: "text_editor", label: "Page Text & Layout", icon: <Edit3 size={13} /> },
-          { id: "media_editor", label: "Images & Logo", icon: <ImageIcon size={13} /> },
+          { id: "media_editor", label: "Images & Client Logos", icon: <ImageIcon size={13} /> },
           { id: "ventures_services", label: "Ventures & Services", icon: <Briefcase size={13} /> },
           { id: "footer_editor", label: "Footer & Chat Support", icon: <Settings size={13} /> },
           { id: "admin_security", label: "Admins & Access", icon: <Users size={13} /> }
@@ -1006,57 +1167,211 @@ export default function AdminDashboard() {
           {/* SIDEBAR: Settings, DB & Email Cards */}
           <div className="lg:col-span-4 space-y-6">
             
-            {/* LIVE DATABASE & SUPABASE */}
+            {/* LIVE DATABASE HUB (FIREBASE FIRESTORE / SUPABASE / MYSQL) */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+              <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
               <div className="flex items-center justify-between pb-2 border-b border-gray-50">
                 <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5">
-                  <Database size={14} className="text-emerald-500" />
-                  <span>Live Database (Supabase)</span>
+                  <Database size={14} className="text-amber-500" />
+                  <span>Cloud Database & Storage</span>
                 </h3>
-                <span className={`px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full ${isSupabase ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {isSupabase ? 'Supabase Live 🟢' : 'Local / Fallback 🟡'}
+                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-100 text-emerald-700">
+                  Firestore Ready 🟢
                 </span>
               </div>
 
-              <div className="space-y-3">
-                <div className="flex flex-col space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Project URL</label>
-                  <input
-                    type="text"
-                    value={supabaseUrl}
-                    onChange={(e) => setSupabaseUrl(e.target.value)}
-                    placeholder="https://xyz.supabase.co"
-                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                  />
-                </div>
-                <div className="flex flex-col space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Service Key / Anon Key</label>
-                  <input
-                    type="password"
-                    value={supabaseKey}
-                    onChange={(e) => setSupabaseKey(e.target.value)}
-                    placeholder="eyJhbGciOiJIUzI1NiI..."
-                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                  />
-                </div>
-
-                {dbTestResult && (
-                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
-                    {dbTestResult}
-                  </div>
-                )}
-
+              {/* Database Engine Selector */}
+              <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-xl text-[10px] font-bold">
                 <button
                   type="button"
-                  onClick={handleTestSupabase}
-                  disabled={isTestingDb}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition"
+                  onClick={() => setDbTab("firebase")}
+                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
+                    dbTab === "firebase"
+                      ? "bg-white text-amber-600 shadow-xs font-black"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
                 >
-                  {isTestingDb ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
-                  <span>{isTestingDb ? "Connecting..." : "Connect & Test Supabase DB"}</span>
+                  🔥 Firebase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDbTab("supabase")}
+                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
+                    dbTab === "supabase"
+                      ? "bg-white text-emerald-600 shadow-xs font-black"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  ⚡ Supabase
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDbTab("mysql")}
+                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
+                    dbTab === "mysql"
+                      ? "bg-white text-blue-600 shadow-xs font-black"
+                      : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  🐬 MySQL
                 </button>
               </div>
+
+              {/* TAB 1: FIREBASE FIRESTORE */}
+              {dbTab === "firebase" && (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-amber-900 uppercase">Provider</span>
+                      <span className="text-[10px] font-mono font-bold text-amber-800">Google Cloud Firestore</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-amber-900 uppercase">Project</span>
+                      <span className="text-[10px] font-mono text-gray-600 truncate max-w-[150px]">gen-lang-client-0889935436</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-amber-900 uppercase">Status</span>
+                      <span className="text-[10px] font-bold text-emerald-600">Provisioned & Active 🟢</span>
+                    </div>
+                  </div>
+
+                  {firestoreTestResult && (
+                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                      {firestoreTestResult}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleTestFirestore}
+                    disabled={isTestingFirestore}
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                  >
+                    {isTestingFirestore ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                    <span>{isTestingFirestore ? "Pinging Cloud Firestore..." : "Test Firestore Connection"}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* TAB 2: SUPABASE */}
+              {dbTab === "supabase" && (
+                <div className="space-y-3">
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Project URL</label>
+                    <input
+                      type="text"
+                      value={supabaseUrl}
+                      onChange={(e) => setSupabaseUrl(e.target.value)}
+                      placeholder="https://xyz.supabase.co"
+                      className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Service Key / Anon Key</label>
+                    <input
+                      type="password"
+                      value={supabaseKey}
+                      onChange={(e) => setSupabaseKey(e.target.value)}
+                      placeholder="eyJhbGciOiJIUzI1NiI..."
+                      className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+
+                  {dbTestResult && (
+                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                      {dbTestResult}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleTestSupabase}
+                    disabled={isTestingDb}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isTestingDb ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                    <span>{isTestingDb ? "Connecting..." : "Connect & Test Supabase DB"}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* TAB 3: MYSQL SERVER */}
+              {dbTab === "mysql" && (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2 flex flex-col space-y-1">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">MySQL Host</label>
+                      <input
+                        type="text"
+                        value={mysqlHost}
+                        onChange={(e) => setMysqlHost(e.target.value)}
+                        placeholder="e.g. localhost or 127.0.0.1"
+                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      />
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">Port</label>
+                      <input
+                        type="text"
+                        value={mysqlPort}
+                        onChange={(e) => setMysqlPort(e.target.value)}
+                        placeholder="3306"
+                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">Database User</label>
+                      <input
+                        type="text"
+                        value={mysqlUser}
+                        onChange={(e) => setMysqlUser(e.target.value)}
+                        placeholder="metaspace_user"
+                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      />
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <label className="text-[9px] font-bold text-gray-400 uppercase">Database Name</label>
+                      <input
+                        type="text"
+                        value={mysqlDatabase}
+                        onChange={(e) => setMysqlDatabase(e.target.value)}
+                        placeholder="metaspace_db"
+                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">MySQL Password</label>
+                    <input
+                      type="password"
+                      value={mysqlPassword}
+                      onChange={(e) => setMysqlPassword(e.target.value)}
+                      placeholder="Enter MySQL password"
+                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+
+                  {mysqlTestResult && (
+                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                      {mysqlTestResult}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleTestMySQL}
+                    disabled={isTestingMysql}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isTestingMysql ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+                    <span>{isTestingMysql ? "Pinging MySQL..." : "Test MySQL Server Connection"}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* RESEND EMAIL NOTIFICATION INTEGRATION */}
@@ -1167,14 +1482,14 @@ export default function AdminDashboard() {
                   <div className="text-center">
                     <p className="text-[9px] font-bold text-gray-400 uppercase mb-2">Active Logo Preview</p>
                     <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow border border-gray-100 overflow-hidden">
-                      {logoUrl ? (
+                      {logoUrl && logoUrl.trim() !== "" ? (
                         <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
                       ) : (
                         <div className="text-xs text-gray-400 italic font-medium">Vector Default</div>
                       )}
                     </div>
                   </div>
-                  {logoUrl && (
+                  {logoUrl && logoUrl.trim() !== "" && (
                     <button
                       onClick={() => {
                         setLogoUrl("");
@@ -1213,7 +1528,11 @@ export default function AdminDashboard() {
                 <div className="space-y-2">
                   <p className="text-[9px] font-bold text-gray-400 uppercase">Active Hero Image Frame</p>
                   <div className="w-full h-24 bg-gray-100 rounded-xl overflow-hidden border border-gray-100 relative shadow-inner">
-                    <img src={lagosBridgeUrl} alt="Hero bg" className="w-full h-full object-cover object-center" />
+                    {lagosBridgeUrl && lagosBridgeUrl.trim() !== "" ? (
+                      <img src={lagosBridgeUrl} alt="Hero bg" className="w-full h-full object-cover object-center" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-400 italic">No Hero Image</div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1228,6 +1547,166 @@ export default function AdminDashboard() {
                     onChange={(e) => handleFileChange(e, "lagosBridgeUrl")}
                   />
                 </label>
+              </div>
+            </div>
+
+          </div>
+
+          {/* CLIENT LOGOS CAROUSEL MANAGER */}
+          <div className="pt-6 border-t border-gray-100 space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-display font-bold text-sm text-brand-blue">
+                    Client & Partner Logos Carousel
+                  </h4>
+                  <span className="px-2 py-0.5 bg-blue-50 text-brand-blue text-[10px] font-bold rounded-full">
+                    {clientLogos.length} Active
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-400 font-sans mt-0.5">
+                  Controls the infinite logo carousel on the Home page. Rendered at 50% opacity by default, 100% on mouse hover or click, with no hyperlink action.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetDefaultClientLogos}
+                  className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5"
+                >
+                  <RefreshCw size={11} />
+                  <span>Reset Default Showcase</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddClientLogo}
+                  className="px-3 py-1.5 bg-brand-crimson hover:bg-red-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm"
+                >
+                  <Plus size={12} />
+                  <span>Add Client Logo</span>
+                </button>
+              </div>
+            </div>
+
+            {/* List of client logos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {clientLogos.map((client, index) => (
+                <div
+                  key={client.id || index}
+                  className="p-4 bg-gray-50/70 border border-gray-100 rounded-2xl space-y-3 hover:border-gray-200 transition"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                      Logo #{index + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClientLogo(index)}
+                      className="p-1.5 text-gray-400 hover:text-brand-crimson hover:bg-red-50 rounded-lg transition"
+                      title="Delete Client Logo"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    {/* Logo Image Preview & Upload Button */}
+                    <div className="flex flex-col items-center gap-2 shrink-0">
+                      <div className="w-14 h-14 bg-white rounded-xl border border-gray-200/80 shadow-sm flex items-center justify-center overflow-hidden p-1">
+                        {client.logoUrl ? (
+                          <img
+                            src={client.logoUrl}
+                            alt={client.name}
+                            className="w-full h-full object-cover rounded-lg"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <span className="text-[10px] font-bold text-gray-400 uppercase">
+                            {client.name ? client.name.slice(0, 2) : "Logo"}
+                          </span>
+                        )}
+                      </div>
+
+                      <label className="px-2 py-1 bg-white hover:bg-gray-100 border border-gray-200 text-brand-blue rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-pointer shadow-2xs transition text-center whitespace-nowrap">
+                        <span>Upload File</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleUploadClientLogoFile(e, index)}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Inputs */}
+                    <div className="flex-1 space-y-2">
+                      <div>
+                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                          Partner / Client Name
+                        </label>
+                        <input
+                          type="text"
+                          value={client.name}
+                          onChange={(e) => handleUpdateClientLogoField(index, "name", e.target.value)}
+                          onBlur={() => handleSaveConfig({ clientLogos })}
+                          placeholder="e.g. Edo Innovates Hub"
+                          className="w-full text-xs font-semibold px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:border-brand-blue focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-bold text-gray-500 uppercase mb-0.5">
+                          Logo Image URL / Base64
+                        </label>
+                        <input
+                          type="text"
+                          value={client.logoUrl}
+                          onChange={(e) => handleUpdateClientLogoField(index, "logoUrl", e.target.value)}
+                          onBlur={() => handleSaveConfig({ clientLogos })}
+                          placeholder="https://... or data:image/..."
+                          className="w-full text-[10px] text-gray-600 px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:border-brand-blue focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Live Interactive Preview Box */}
+            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                  Live Carousel Behavior Preview (50% opacity default, 100% on hover/click)
+                </span>
+                <span className="text-[9px] text-gray-400 font-sans">
+                  Click any item below to test active state without hyperlink navigation
+                </span>
+              </div>
+              <div className="flex items-center gap-4 overflow-x-auto py-2 px-1">
+                {clientLogos.map((client, idx) => (
+                  <button
+                    key={`preview-${idx}`}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setMessage(`Selected "${client.name}" (No hyperlink performed)`);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-gray-200 opacity-50 hover:opacity-100 hover:scale-105 transition-all duration-200 cursor-pointer shrink-0 shadow-2xs"
+                  >
+                    <div className="w-6 h-6 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center">
+                      {client.logoUrl ? (
+                        <img src={client.logoUrl} alt={client.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[8px] font-bold text-gray-400 uppercase">{client.name.slice(0, 2)}</span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-bold text-brand-blue whitespace-nowrap">{client.name}</span>
+                  </button>
+                ))}
               </div>
             </div>
 

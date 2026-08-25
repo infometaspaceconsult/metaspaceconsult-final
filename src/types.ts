@@ -66,3 +66,9 @@ export interface ContactInquiry {
   message: string;
   createdAt: string;
 }
+
+export interface ClientLogo {
+  id: string;
+  name: string;
+  logoUrl: string;
+}

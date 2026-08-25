@@ -1,10 +1,9 @@
-import mysql from "mysql2/promise";
 import fs from "fs";
 import path from "path";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Define TS interfaces for our store
-import { Venture, ServiceOffer, InsightPost, Consultation, ContactInquiry } from "./src/types";
+import { Venture, ServiceOffer, InsightPost, Consultation, ContactInquiry, ClientLogo } from "./src/types";
 
 export interface AdminUser {
   username: string;
@@ -32,6 +31,7 @@ export interface SiteConfig {
   what_we_do_desc: string;
   ventures: Venture[];
   services: ServiceOffer[];
+  clientLogos?: ClientLogo[];
   teamMembers: { name: string; role: string; bio: string; avatar: string }[];
   insights: InsightPost[];
   whatsapp_number?: string;
@@ -53,30 +53,41 @@ export interface SiteConfig {
 let supabaseInstance: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient | null {
-  let url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  let url = "";
+  let key = "";
+
+  try {
+    const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
+    if (fileConf?.supabase_url && fileConf?.supabase_key) {
+      url = fileConf.supabase_url;
+      key = fileConf.supabase_key;
+    }
+  } catch {
+    // Ignore read error during boot
+  }
 
   if (!url || !key) {
-    try {
-      const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
-      if (fileConf?.supabase_url && fileConf?.supabase_key) {
-        url = fileConf.supabase_url;
-        key = fileConf.supabase_key;
-      }
-    } catch {
-      // Ignore read error during boot
-    }
+    url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
   }
 
   if (url && key) {
-    if (!supabaseInstance) {
-      try {
-        supabaseInstance = createClient(url, key);
-      } catch (e) {
-        console.error("Supabase init error:", e);
-      }
+    let cleanUrl = (url || "").trim();
+    if (cleanUrl && !cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+      cleanUrl = `https://${cleanUrl}`;
     }
-    return supabaseInstance;
+    const cleanKey = (key || "").trim();
+
+    if (cleanUrl && cleanKey) {
+      if (!supabaseInstance) {
+        try {
+          supabaseInstance = createClient(cleanUrl, cleanKey);
+        } catch (e) {
+          console.error("Supabase init error:", e);
+        }
+      }
+      return supabaseInstance;
+    }
   }
   return null;
 }
@@ -85,29 +96,63 @@ export function resetSupabaseClient(): void {
   supabaseInstance = null;
 }
 
-export async function testSupabaseConnection(url: string, key: string): Promise<{ success: boolean; message: string }> {
+export async function testSupabaseConnection(rawUrl: string, key: string): Promise<{ success: boolean; message: string }> {
   try {
-    const client = createClient(url, key);
-    const { data, error } = await client.from("metaspace_config").select("*").limit(1);
-    if (error) {
-      const msg = error.message || "";
-      if (
-        error.code === "42P01" ||
-        error.code === "PGRST301" ||
-        msg.toLowerCase().includes("not find the table") ||
-        msg.toLowerCase().includes("relation") ||
-        msg.toLowerCase().includes("schema cache")
-      ) {
-        return {
-          success: true,
-          message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; local storage will be used until table is created in Supabase SQL Editor)."
-        };
-      }
-      return { success: false, message: `Supabase Error: ${error.message}` };
+    let url = (rawUrl || "").trim();
+    if (!url) {
+      return { success: false, message: "Supabase Project URL is empty." };
     }
-    return { success: true, message: "Live connection to Supabase database verified successfully!" };
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      url = `https://${url}`;
+    }
+
+    const cleanKey = (key || "").trim();
+    if (!cleanKey) {
+      return { success: false, message: "Supabase Anon / Service Role Key is empty." };
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const restUrl = `${url.replace(/\/+$/, "")}/rest/v1/metaspace_config?select=*&limit=1`;
+      const resp = await fetch(restUrl, {
+        headers: {
+          "apikey": cleanKey,
+          "Authorization": `Bearer ${cleanKey}`
+        },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        return { success: true, message: "Live connection to Supabase database verified successfully!" };
+      } else {
+        const errText = await resp.text().catch(() => "");
+        let errJson: any = {};
+        try { errJson = JSON.parse(errText); } catch {}
+        const msg = errJson.message || errJson.hint || errText || resp.statusText;
+
+        if (resp.status === 404 || msg.includes("not find") || msg.includes("relation") || msg.includes("schema cache") || msg.includes("does not exist")) {
+          return {
+            success: true,
+            message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; run the SQL schema setup in Supabase SQL Editor)."
+          };
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          return { success: false, message: `Supabase Auth Error (${resp.status}): Invalid API Key or Permissions.` };
+        }
+        return { success: false, message: `Supabase Error (${resp.status}): ${msg || "Unable to access table."}` };
+      }
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === "AbortError") {
+        return { success: false, message: "Supabase connection timed out after 8 seconds. Please verify the URL." };
+      }
+      return { success: false, message: `Could not reach Supabase endpoint (${url}): ${fetchErr.message || String(fetchErr)}` };
+    }
   } catch (err: any) {
-    return { success: false, message: `Failed to connect: ${err.message || String(err)}` };
+    return { success: false, message: `Failed to test Supabase connection: ${err.message || String(err)}` };
   }
 }
 
@@ -341,6 +386,48 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       }
     }
   ],
+  clientLogos: [
+    {
+      id: "client-1",
+      name: "Edo Innovates",
+      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-2",
+      name: "Ugbekun Educational Trust",
+      logoUrl: "https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-3",
+      name: "Cyona Health Systems",
+      logoUrl: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-4",
+      name: "EduRide Mobility Hub",
+      logoUrl: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-5",
+      name: "Oghowa Tech Labs",
+      logoUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-6",
+      name: "Pan-African Digital Labs",
+      logoUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-7",
+      name: "Zenith Capital & Tech",
+      logoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-8",
+      name: "Silicon Lagoon Alliance",
+      logoUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
+    }
+  ],
   teamMembers: [
     {
       name: "Engr. Osaze Omonbude",
@@ -410,64 +497,20 @@ interface InFileDB {
   contactInquiries: ContactInquiry[];
 }
 
-let mysqlPool: mysql.Pool | null = null;
-let useLocalFile = true;
-
 export function isUsingMySQL(): boolean {
-  return !useLocalFile;
+  return false;
 }
-
-// Helper to check for database settings in environment
-const hasMySQLConfig = (): boolean => {
-  return !!(
-    process.env.DB_HOST ||
-    process.env.MYSQL_HOST ||
-    process.env.DB_PASSWORD ||
-    process.env.MYSQL_PASSWORD
-  );
-};
 
 // Initialize DB Connection and Tables
 export async function initDatabase() {
-  if (hasMySQLConfig()) {
-    try {
-      console.log("MySQL environment variables detected. Attempting connection to external cPanel MySQL...");
-      const dbConfig = {
-        host: process.env.DB_HOST || process.env.MYSQL_HOST || "localhost",
-        user: process.env.DB_USER || process.env.MYSQL_USER || "root",
-        password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || "",
-        database: process.env.DB_NAME || process.env.MYSQL_DATABASE || "metaspace",
-        port: parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || "3306", 10),
-        ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
-      };
-
-      mysqlPool = mysql.createPool(dbConfig);
-      
-      // Test Connection
-      const conn = await mysqlPool.getConnection();
-      console.log("Successfully connected to MySQL database!");
-      conn.release();
-      useLocalFile = false;
-
-      // Migrate Tables
-      await runMySQLMigrations();
-    } catch (err: any) {
-      console.error("Failed to connect to MySQL. Falling back to local persistent JSON file database.", err.message);
-      useLocalFile = true;
-    }
-  } else {
-    console.log("No MySQL environment variables detected. Using local persistent JSON file database.");
-    useLocalFile = true;
-  }
-
-  // Double check data directory exists
+  console.log("Initializing database layer (Supabase / In-Memory & /tmp Fallback)...");
+  
   try {
     const dataDir = path.join(process.cwd(), "data");
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    // Ensure JSON files exist and are seeded
     if (!fs.existsSync(SITE_CONFIG_PATH)) {
       fs.writeFileSync(SITE_CONFIG_PATH, JSON.stringify(DEFAULT_SITE_CONFIG, null, 2), "utf8");
     }
@@ -500,137 +543,54 @@ export async function initDatabase() {
     }
     if (!fs.existsSync(INQUIRIES_PATH)) {
       fs.writeFileSync(INQUIRIES_PATH, JSON.stringify([], null, 2), "utf8");
-      console.log("Local file-based databases successfully initialized/seeded!");
     }
   } catch (err: any) {
-    console.warn("Storage directory notice: Using in-memory and /tmp fallback for Vercel Serverless environment.");
-  }
-}
-
-// Migrate MySQL tables
-async function runMySQLMigrations() {
-  if (!mysqlPool) return;
-
-  console.log("Running MySQL Migrations...");
-  try {
-    // 1. admin_settings
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS admin_settings (
-        setting_key VARCHAR(100) PRIMARY KEY,
-        setting_value TEXT NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // 2. page_contents
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS page_contents (
-        content_key VARCHAR(100) PRIMARY KEY,
-        content_value TEXT NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // 3. images
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS images (
-        image_key VARCHAR(100) PRIMARY KEY,
-        image_value LONGTEXT NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // 4. consultations
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS consultations (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        organization VARCHAR(255) NULL,
-        sector VARCHAR(255) NULL,
-        service VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        createdAt VARCHAR(100) NOT NULL,
-        status VARCHAR(50) NOT NULL DEFAULT 'pending'
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // 5. contact_inquiries
-    await mysqlPool.query(`
-      CREATE TABLE IF NOT EXISTS contact_inquiries (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) NOT NULL,
-        subject VARCHAR(255) NOT NULL,
-        message TEXT NOT NULL,
-        createdAt VARCHAR(100) NOT NULL
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-
-    // Seed defaults in MySQL if empty
-    const [rows]: any = await mysqlPool.query("SELECT COUNT(*) as count FROM admin_settings");
-    if (rows[0].count === 0) {
-      console.log("MySQL database is empty. Seeding default configuration...");
-      
-      // Seed Admin settings
-      await mysqlPool.query("INSERT INTO admin_settings (setting_key, setting_value) VALUES (?, ?)", [
-        "adminPassword", DEFAULT_SITE_CONFIG.adminPassword || "admin"
-      ]);
-      await mysqlPool.query("INSERT INTO admin_settings (setting_key, setting_value) VALUES (?, ?)", [
-        "logoUrl", DEFAULT_SITE_CONFIG.logoUrl || ""
-      ]);
-      await mysqlPool.query("INSERT INTO admin_settings (setting_key, setting_value) VALUES (?, ?)", [
-        "lagosBridgeUrl", DEFAULT_SITE_CONFIG.lagosBridgeUrl || ""
-      ]);
-
-      // Seed core site config fields
-      const keysToSeed = [
-        "home_hero_title", "home_hero_subtitle", "home_hero_desc",
-        "about_hero_title", "about_hero_desc", "about_mission_title", "about_mission_text",
-        "what_we_do_title", "what_we_do_desc",
-        "ventures", "services", "teamMembers", "insights"
-      ];
-
-      for (const k of keysToSeed) {
-        const val = DEFAULT_SITE_CONFIG[k as keyof SiteConfig];
-        const strVal = typeof val === "string" ? val : JSON.stringify(val);
-        await mysqlPool.query("INSERT INTO page_contents (content_key, content_value) VALUES (?, ?)", [k, strVal]);
+    console.log("Notice: Operating with in-memory & /tmp storage fallback (Vercel Serverless environment).");
+    try {
+      const tmpDataDir = path.join("/tmp", "data");
+      if (!fs.existsSync(tmpDataDir)) {
+        fs.mkdirSync(tmpDataDir, { recursive: true });
       }
+      const tmpSitePath = path.join(tmpDataDir, "site_config.json");
+      const tmpConsultPath = path.join(tmpDataDir, "consultations.json");
+      const tmpInqPath = path.join(tmpDataDir, "inquiries.json");
 
-      // Seed initial consultations
-      const initConsults = [
-        {
-          id: "const-1",
-          name: "Dr. Alabi Johnson",
-          email: "alabi@edo-health.org",
-          organization: "Edo Health Initiative",
-          sector: "Healthcare",
-          service: "Digital Transformation",
-          message: "We want to digitize our primary healthcare operations in rural Edo state and are looking for a technical partner.",
-          createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-          status: "scheduled"
-        },
-        {
-          id: "const-2",
-          name: "Amarachi Okafor",
-          email: "ceo@agrotech-africa.com",
-          organization: "AgroTech Africa",
-          sector: "Agriculture / Startups",
-          service: "Venture Design Studio",
-          message: "Interested in incubation through the Oghowa Accelerator for our seed stage supply-chain venture.",
-          createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-          status: "pending"
-        }
-      ];
-
-      for (const c of initConsults) {
-        await mysqlPool.query(
-          "INSERT INTO consultations (id, name, email, organization, sector, service, message, createdAt, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [c.id, c.name, c.email, c.organization, c.sector, c.service, c.message, c.createdAt, c.status]
-        );
+      if (!fs.existsSync(tmpSitePath)) {
+        fs.writeFileSync(tmpSitePath, JSON.stringify(DEFAULT_SITE_CONFIG, null, 2), "utf8");
       }
-      
-      console.log("MySQL successfully populated with default seed data!");
+      if (!fs.existsSync(tmpConsultPath)) {
+        const initConsults = [
+          {
+            id: "const-1",
+            name: "Dr. Alabi Johnson",
+            email: "alabi@edo-health.org",
+            organization: "Edo Health Initiative",
+            sector: "Healthcare",
+            service: "Digital Transformation",
+            message: "We want to digitize our primary healthcare operations in rural Edo state and are looking for a technical partner.",
+            createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+            status: "scheduled",
+          },
+          {
+            id: "const-2",
+            name: "Amarachi Okafor",
+            email: "ceo@agrotech-africa.com",
+            organization: "AgroTech Africa",
+            sector: "Agriculture / Startups",
+            service: "Venture Design Studio",
+            message: "Interested in incubation through the Oghowa Accelerator for our seed stage supply-chain venture.",
+            createdAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+            status: "pending",
+          }
+        ];
+        fs.writeFileSync(tmpConsultPath, JSON.stringify(initConsults, null, 2), "utf8");
+      }
+      if (!fs.existsSync(tmpInqPath)) {
+        fs.writeFileSync(tmpInqPath, JSON.stringify([], null, 2), "utf8");
+      }
+    } catch (tmpErr) {
+      console.warn("/tmp storage init warning:", tmpErr);
     }
-  } catch (err: any) {
-    console.error("Error running migrations or seeding database:", err);
   }
 }
 
@@ -645,40 +605,40 @@ function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
     cyona: "https://www.cynonamediccare.com"
   };
 
-  if (Array.isArray(merged.ventures)) {
-    const hasMetagen = merged.ventures.some(v => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
-    if (!hasMetagen) {
-      merged.ventures = [DEFAULT_SITE_CONFIG.ventures[0], ...merged.ventures];
-    } else {
-      merged.ventures = merged.ventures.map(v => {
-        if (!v) return v;
-        if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
-          return { ...DEFAULT_SITE_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_SITE_CONFIG.ventures[0].url };
-        }
-        return v;
-      });
+  const defaultVentures = DEFAULT_SITE_CONFIG.ventures || [];
+
+  if (Array.isArray(merged.ventures) && merged.ventures.length > 0) {
+    const existingIds = new Set(merged.ventures.map(v => v?.id));
+    
+    // Ensure all default 5 ventures exist in the list
+    for (const defV of defaultVentures) {
+      if (defV && defV.id && !existingIds.has(defV.id)) {
+        merged.ventures.push(defV);
+      }
     }
 
-    // Ensure all ventures have official URLs
+    // Ensure all ventures have official URLs and full details
     merged.ventures = merged.ventures.map(v => {
       if (!v) return v;
+      const matchingDef = defaultVentures.find(d => d.id === v.id);
       const fallbackUrl = defaultUrls[v.id] || "https://www.metaspaceconsult.com";
-      if (!v.url || v.url.trim() === "") {
-        return { ...v, url: fallbackUrl };
-      }
-      return v;
+      return {
+        ...(matchingDef || {}),
+        ...v,
+        url: v.url && v.url.trim() !== "" ? v.url : (matchingDef?.url || fallbackUrl)
+      };
     });
   } else {
-    merged.ventures = DEFAULT_SITE_CONFIG.ventures;
+    merged.ventures = defaultVentures;
   }
 
   if (Array.isArray(merged.footer_ventures_links)) {
-    const hasMetagenLink = merged.footer_ventures_links.some(l => l && l.label && l.label.toLowerCase().includes('metagen'));
-    if (!hasMetagenLink) {
-      merged.footer_ventures_links = [
-        { label: "MetaGen Project", tab: "ventures" },
-        ...merged.footer_ventures_links
-      ];
+    const defaultLinks = DEFAULT_SITE_CONFIG.footer_ventures_links || [];
+    const existingLabels = new Set(merged.footer_ventures_links.map(l => l?.label));
+    for (const defL of defaultLinks) {
+      if (defL && defL.label && !existingLabels.has(defL.label)) {
+        merged.footer_ventures_links.push(defL);
+      }
     }
   } else {
     merged.footer_ventures_links = DEFAULT_SITE_CONFIG.footer_ventures_links;
@@ -798,39 +758,7 @@ export async function getSiteConfig(): Promise<SiteConfig> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      const config: any = {};
-      
-      // Get Admin setting keys
-      const [settingsRows]: any = await mysqlPool.query("SELECT * FROM admin_settings");
-      for (const row of settingsRows) {
-        config[row.setting_key] = row.setting_value;
-      }
-
-      // Get page contents
-      const [contentRows]: any = await mysqlPool.query("SELECT * FROM page_contents");
-      for (const row of contentRows) {
-        const k = row.content_key;
-        const v = row.setting_value || row.content_value;
-        try {
-          if (v && typeof v === "string" && (v.startsWith("{") || v.startsWith("["))) {
-            config[k] = JSON.parse(v);
-          } else {
-            config[k] = v;
-          }
-        } catch {
-          config[k] = v;
-        }
-      }
-
-      return ensureMetagenInConfig({ ...DEFAULT_SITE_CONFIG, ...config });
-    } catch (err) {
-      console.error("Error fetching site config from MySQL, using local file.", err);
-    }
-  }
-
-  // Fallback to Local JSON file
+  // Fallback to Local JSON / Memory store
   const fileData = readLocalFile();
   return ensureMetagenInConfig({
     ...DEFAULT_SITE_CONFIG,
@@ -844,10 +772,18 @@ export async function updateSiteConfig(updates: Partial<SiteConfig>): Promise<Si
     resetSupabaseClient();
   }
 
+  const fileData = readLocalFile();
+  fileData.siteConfig = {
+    ...fileData.siteConfig,
+    ...updates
+  };
+  writeLocalFile(fileData);
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
       for (const [key, value] of Object.entries(updates)) {
+        if (value === undefined) continue;
         const valStr = typeof value === "string" ? value : JSON.stringify(value);
         await supabase.from("metaspace_config").upsert({ setting_key: key, setting_value: valStr }, { onConflict: "setting_key" });
       }
@@ -856,34 +792,6 @@ export async function updateSiteConfig(updates: Partial<SiteConfig>): Promise<Si
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      for (const [key, value] of Object.entries(updates)) {
-        const valStr = typeof value === "string" ? value : JSON.stringify(value);
-        if (key === "adminPassword" || key === "logoUrl" || key === "lagosBridgeUrl") {
-          await mysqlPool.query(
-            "INSERT INTO admin_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?",
-            [key, valStr, valStr]
-          );
-        } else {
-          await mysqlPool.query(
-            "INSERT INTO page_contents (content_key, content_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE content_value = ?",
-            [key, valStr, valStr]
-          );
-        }
-      }
-    } catch (err) {
-      console.error("Error updating MySQL Site Config:", err);
-    }
-  }
-
-  // Update in Local File
-  const fileData = readLocalFile();
-  fileData.siteConfig = {
-    ...fileData.siteConfig,
-    ...updates
-  };
-  writeLocalFile(fileData);
   return getSiteConfig();
 }
 
@@ -901,24 +809,16 @@ export async function getConsultations(): Promise<Consultation[]> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      const [rows]: any = await mysqlPool.query("SELECT * FROM consultations ORDER BY createdAt DESC");
-      return rows.map((r: any) => ({
-        ...r,
-        status: r.status as "pending" | "scheduled" | "completed"
-      }));
-    } catch (err) {
-      console.error("Error reading MySQL consultations:", err);
-    }
-  }
-
   // Local File Fallback
   return readLocalFile().consultations;
 }
 
 // API EXPORTS: Add consultation
 export async function addConsultation(c: Consultation): Promise<Consultation> {
+  const fileData = readLocalFile();
+  fileData.consultations.push(c);
+  writeLocalFile(fileData);
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -928,26 +828,18 @@ export async function addConsultation(c: Consultation): Promise<Consultation> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      await mysqlPool.query(
-        "INSERT INTO consultations (id, name, email, organization, sector, service, message, createdAt, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [c.id, c.name, c.email, c.organization, c.sector, c.service, c.message, c.createdAt, c.status]
-      );
-    } catch (err) {
-      console.error("Error saving consultation to MySQL:", err);
-    }
-  }
-
-  // Local File
-  const fileData = readLocalFile();
-  fileData.consultations.push(c);
-  writeLocalFile(fileData);
   return c;
 }
 
 // API EXPORTS: Update consultation status
 export async function updateConsultationStatus(id: string, status: "pending" | "scheduled" | "completed"): Promise<boolean> {
+  const fileData = readLocalFile();
+  const c = fileData.consultations.find(item => item.id === id);
+  if (c) {
+    c.status = status;
+    writeLocalFile(fileData);
+  }
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -957,27 +849,19 @@ export async function updateConsultationStatus(id: string, status: "pending" | "
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      await mysqlPool.query("UPDATE consultations SET status = ? WHERE id = ?", [status, id]);
-    } catch (err) {
-      console.error("Error updating consultation status in MySQL:", err);
-    }
-  }
-
-  // Local File
-  const fileData = readLocalFile();
-  const c = fileData.consultations.find(item => item.id === id);
-  if (c) {
-    c.status = status;
-    writeLocalFile(fileData);
-    return true;
-  }
-  return false;
+  return !!c;
 }
 
 // API EXPORTS: Delete consultation
 export async function deleteConsultation(id: string): Promise<boolean> {
+  const fileData = readLocalFile();
+  const initialLen = fileData.consultations.length;
+  fileData.consultations = fileData.consultations.filter(item => item.id !== id);
+  const deletedLocally = fileData.consultations.length !== initialLen;
+  if (deletedLocally) {
+    writeLocalFile(fileData);
+  }
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -987,23 +871,7 @@ export async function deleteConsultation(id: string): Promise<boolean> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      await mysqlPool.query("DELETE FROM consultations WHERE id = ?", [id]);
-    } catch (err) {
-      console.error("Error deleting consultation from MySQL:", err);
-    }
-  }
-
-  // Local File
-  const fileData = readLocalFile();
-  const initialLen = fileData.consultations.length;
-  fileData.consultations = fileData.consultations.filter(item => item.id !== id);
-  if (fileData.consultations.length !== initialLen) {
-    writeLocalFile(fileData);
-    return true;
-  }
-  return false;
+  return deletedLocally;
 }
 
 // API EXPORTS: Get Contact Inquiries
@@ -1020,21 +888,16 @@ export async function getContactInquiries(): Promise<ContactInquiry[]> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      const [rows]: any = await mysqlPool.query("SELECT * FROM contact_inquiries ORDER BY createdAt DESC");
-      return rows;
-    } catch (err) {
-      console.error("Error reading MySQL inquiries:", err);
-    }
-  }
-
   // Local File
   return readLocalFile().contactInquiries;
 }
 
 // API EXPORTS: Add Contact Inquiry
 export async function addContactInquiry(inq: ContactInquiry): Promise<ContactInquiry> {
+  const fileData = readLocalFile();
+  fileData.contactInquiries.push(inq);
+  writeLocalFile(fileData);
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -1044,26 +907,19 @@ export async function addContactInquiry(inq: ContactInquiry): Promise<ContactInq
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      await mysqlPool.query(
-        "INSERT INTO contact_inquiries (id, name, email, subject, message, createdAt) VALUES (?, ?, ?, ?, ?, ?)",
-        [inq.id, inq.name, inq.email, inq.subject, inq.message, inq.createdAt]
-      );
-    } catch (err) {
-      console.error("Error saving inquiry to MySQL:", err);
-    }
-  }
-
-  // Local File
-  const fileData = readLocalFile();
-  fileData.contactInquiries.push(inq);
-  writeLocalFile(fileData);
   return inq;
 }
 
 // API EXPORTS: Delete Contact Inquiry
 export async function deleteContactInquiry(id: string): Promise<boolean> {
+  const fileData = readLocalFile();
+  const initialLen = fileData.contactInquiries.length;
+  fileData.contactInquiries = fileData.contactInquiries.filter(item => item.id !== id);
+  const deletedLocally = fileData.contactInquiries.length !== initialLen;
+  if (deletedLocally) {
+    writeLocalFile(fileData);
+  }
+
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -1073,21 +929,5 @@ export async function deleteContactInquiry(id: string): Promise<boolean> {
     }
   }
 
-  if (!useLocalFile && mysqlPool) {
-    try {
-      await mysqlPool.query("DELETE FROM contact_inquiries WHERE id = ?", [id]);
-    } catch (err) {
-      console.error("Error deleting inquiry from MySQL:", err);
-    }
-  }
-
-  // Local File
-  const fileData = readLocalFile();
-  const initialLen = fileData.contactInquiries.length;
-  fileData.contactInquiries = fileData.contactInquiries.filter(item => item.id !== id);
-  if (fileData.contactInquiries.length !== initialLen) {
-    writeLocalFile(fileData);
-    return true;
-  }
-  return false;
+  return deletedLocally;
 }

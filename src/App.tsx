@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
+import { motion } from "motion/react";
 import { 
   ArrowRight, BookOpen, Rocket, Bus, Heart, Globe, Cpu, Network, Award, 
   MapPin, Phone, Mail, CheckCircle, Sparkles, Send, ShieldCheck, HelpCircle, 
   ChevronRight, Calendar, ArrowUpRight, MessageSquare, GraduationCap, Clock, User,
   Users, TrendingUp, ExternalLink
 } from "lucide-react";
-import { TabType, Venture, ServiceOffer, InsightPost } from "./types";
-import { VENTURES_DATA, SERVICES_DATA, INSIGHTS_DATA, LAGOS_BRIDGE_IMAGE, TEAM_MEMBERS } from "./data";
+import { TabType, Venture, ServiceOffer, InsightPost, ClientLogo } from "./types";
+import { VENTURES_DATA, SERVICES_DATA, INSIGHTS_DATA, LAGOS_BRIDGE_IMAGE, TEAM_MEMBERS, CLIENT_LOGOS_DATA } from "./data";
 import { apiFetchSiteConfig, apiCreateInquiry } from "./lib/apiFallback";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
@@ -14,6 +15,8 @@ import GeminiAssistant from "./components/GeminiAssistant";
 import ConsultationForm from "./components/ConsultationForm";
 import VentureDetail from "./components/VentureDetail";
 import AdminDashboard from "./components/AdminDashboard";
+import ClientLogosCarousel from "./components/ClientLogosCarousel";
+import BackToTop from "./components/BackToTop";
 import { Preloader } from "./components/Preloader";
 
 export default function App() {
@@ -31,6 +34,7 @@ export default function App() {
   const [services, setServices] = useState<ServiceOffer[]>(SERVICES_DATA);
   const [teamMembers, setTeamMembers] = useState<any[]>(TEAM_MEMBERS);
   const [insights, setInsights] = useState<InsightPost[]>(INSIGHTS_DATA);
+  const [clientLogos, setClientLogos] = useState<ClientLogo[]>(CLIENT_LOGOS_DATA);
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [lagosBridgeUrl, setLagosBridgeUrl] = useState<string>(LAGOS_BRIDGE_IMAGE);
 
@@ -82,6 +86,11 @@ export default function App() {
         if (d.services) setServices(d.services);
         if (d.teamMembers) setTeamMembers(d.teamMembers);
         if (d.insights) setInsights(d.insights);
+        if (d.clientLogos && Array.isArray(d.clientLogos) && d.clientLogos.length > 0) {
+          setClientLogos(d.clientLogos);
+        } else if (d.client_logos && Array.isArray(d.client_logos) && d.client_logos.length > 0) {
+          setClientLogos(d.client_logos);
+        }
         if (d.logoUrl !== undefined) setLogoUrl(d.logoUrl);
         if (d.lagosBridgeUrl) setLagosBridgeUrl(d.lagosBridgeUrl);
 
@@ -301,12 +310,16 @@ export default function App() {
                   <div className="lg:col-span-5 relative">
                     <div className="absolute -inset-2 bg-gradient-to-tr from-brand-crimson via-purple-600 to-brand-blue rounded-3xl blur-lg opacity-30 animate-pulse" />
                     <div className="relative overflow-hidden rounded-3xl border border-gray-100 shadow-2xl h-[380px] sm:h-[520px] w-full">
-                      <img 
-                        src={lagosBridgeUrl} 
-                        alt="Lagos Lekki Ikoyi Link Bridge Metaspace"
-                        referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000"
-                      />
+                      {lagosBridgeUrl && lagosBridgeUrl.trim() !== "" ? (
+                        <img 
+                          src={lagosBridgeUrl} 
+                          alt="Lagos Lekki Ikoyi Link Bridge Metaspace"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-brand-blue to-brand-navy flex items-center justify-center text-white/50 text-sm">Metaspace Consulting</div>
+                      )}
                       <div className="absolute inset-0 bg-gradient-to-t from-brand-blue/85 via-brand-blue/30 to-transparent flex flex-col justify-end p-6 sm:p-8">
                         <div className="backdrop-blur-md bg-white/10 border border-white/20 p-5 rounded-2xl text-white shadow-lg">
                           <p className="font-display font-bold text-base tracking-wide">Benin City Headquarters</p>
@@ -348,6 +361,9 @@ export default function App() {
               </div>
             </section>
 
+            {/* CLIENTS & PARTNERS LOGO CAROUSEL */}
+            <ClientLogosCarousel clientLogos={clientLogos} />
+
             {/* OUR VENTURES SECTION */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
               <div className="text-center space-y-2">
@@ -360,11 +376,26 @@ export default function App() {
               </div>
 
               {/* Ventures grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
-                {ventures.map((ven) => (
-                  <div 
+              <motion.div 
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true, margin: "-40px" }}
+                transition={{ duration: 0.3 }}
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5"
+              >
+                {ventures.map((ven, idx) => (
+                  <motion.div 
                     key={ven.id}
-                    className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-lg transition-all duration-200 flex flex-col h-full overflow-hidden group"
+                    initial={{ opacity: 0, y: 22, scale: 0.98 }}
+                    whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                    viewport={{ once: true, margin: "-30px" }}
+                    transition={{ 
+                      duration: 0.45, 
+                      delay: idx * 0.08, 
+                      ease: [0.25, 0.1, 0.25, 1] 
+                    }}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-lg transition-shadow duration-200 flex flex-col h-full overflow-hidden group"
                   >
                     <div className="p-5 flex-1 space-y-4 flex flex-col justify-between">
                       <div className="space-y-3">
@@ -405,9 +436,9 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
-              </div>
+              </motion.div>
             </section>
 
             {/* WHY METASPACE? SECTION */}
@@ -601,12 +632,18 @@ export default function App() {
                 {teamMembers.map((t, idx) => (
                   <div key={idx} className="bg-white border border-gray-100 p-6 rounded-2xl shadow-sm space-y-4">
                     <div className="flex items-center space-x-3.5">
-                      <img 
-                        src={t.avatar} 
-                        alt={t.name} 
-                        referrerPolicy="no-referrer"
-                        className="w-12 h-12 rounded-full object-cover shadow"
-                      />
+                      {t.avatar && t.avatar.trim() !== "" ? (
+                        <img 
+                          src={t.avatar} 
+                          alt={t.name} 
+                          referrerPolicy="no-referrer"
+                          className="w-12 h-12 rounded-full object-cover shadow"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-brand-blue/10 flex items-center justify-center text-brand-blue font-bold text-sm shadow">
+                          {t.name ? t.name.charAt(0) : "M"}
+                        </div>
+                      )}
                       <div>
                         <h4 className="font-display font-extrabold text-xs text-brand-blue leading-snug">
                           {t.name}
@@ -732,8 +769,19 @@ export default function App() {
 
             {/* Detailed Portfolio Breakdown list with statistics */}
             <div className="space-y-8">
-              {ventures.map((ven) => (
-                <div key={ven.id} className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden grid grid-cols-1 lg:grid-cols-12">
+              {ventures.map((ven, idx) => (
+                <motion.div 
+                  key={ven.id}
+                  initial={{ opacity: 0, y: 24 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ 
+                    duration: 0.45, 
+                    delay: idx * 0.1, 
+                    ease: [0.25, 0.1, 0.25, 1] 
+                  }}
+                  whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                  className="bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow overflow-hidden grid grid-cols-1 lg:grid-cols-12"
+                >
                   
                   {/* Left Column Colored branding and Stats */}
                   <div className={`lg:col-span-4 p-6 text-white bg-gradient-to-br ${ven.color || "from-brand-blue to-brand-navy"} flex flex-col justify-between relative`}>
@@ -816,7 +864,7 @@ export default function App() {
                     </div>
                   </div>
 
-                </div>
+                </motion.div>
               ))}
             </div>
 
@@ -866,12 +914,16 @@ export default function App() {
                 </div>
 
                 <div className="h-[250px] sm:h-[350px] rounded-2xl overflow-hidden shadow-inner border border-gray-100">
-                  <img 
-                    src={expandedPost.image} 
-                    alt={expandedPost.title} 
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover object-center"
-                  />
+                  {expandedPost.image && expandedPost.image.trim() !== "" ? (
+                    <img 
+                      src={expandedPost.image} 
+                      alt={expandedPost.title} 
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-center"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-400 text-sm">Metaspace Insights</div>
+                  )}
                 </div>
 
                 <div className="prose prose-sm max-w-none text-xs sm:text-sm text-gray-600 leading-relaxed font-sans space-y-4">
@@ -901,12 +953,16 @@ export default function App() {
                   >
                     <div>
                       <div className="h-44 overflow-hidden relative">
-                        <img 
-                          src={post.image} 
-                          alt={post.title} 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                        />
+                        {post.image && post.image.trim() !== "" ? (
+                          <img 
+                            src={post.image} 
+                            alt={post.title} 
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs">Article Image</div>
+                        )}
                         <span className="absolute top-3 left-3 text-[9px] font-bold text-white bg-brand-crimson px-2.5 py-1 rounded-md uppercase tracking-wider">
                           {post.category}
                         </span>
@@ -1145,10 +1201,14 @@ export default function App() {
         footerInstagram={footerInstagram}
         footerQuickLinks={footerQuickLinks}
         footerVenturesLinks={footerVenturesLinks}
+        ventures={ventures}
       />
 
       {/* SYSTEM CHATBOT FLOATING WIDGET */}
       <GeminiAssistant />
+
+      {/* FLOATING BACK TO TOP BUTTON */}
+      <BackToTop threshold={300} />
 
       {/* SYSTEM CONSULTATION FORM MODAL */}
       <ConsultationForm 
