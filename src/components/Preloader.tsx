@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { MetaspaceLogo } from "./MetaspaceLogo";
+import MetaspaceLogo from "./MetaspaceLogo";
 
 interface PreloaderProps {
   onComplete: () => void;
@@ -26,8 +26,10 @@ export function Preloader({ onComplete, isTabTransition = false, logoUrl }: Prel
 
       if (currentProgress < 100) {
         // Simulate organic loading behavior
+        // Fast start, slow down in the middle, then speed up or smooth out
         let increment = 0;
         if (isTabTransition) {
+          // Linear and rapid for tab transitions
           increment = (delta / targetDuration) * 100;
         } else {
           if (currentProgress < 40) {
@@ -175,15 +177,9 @@ export function Preloader({ onComplete, isTabTransition = false, logoUrl }: Prel
                 style={{ animationDelay: "-2s", opacity: 0.1 }}
               />
               <g className="logo-group">
-                {/* Metaspace Logo Icon */}
+                {/* Metaspace Logo */}
                 <foreignObject x="172" y="32" width="56" height="56">
-                  <div className="w-[56px] h-[56px] rounded-full shadow-md bg-white border border-gray-100 p-1 flex items-center justify-center overflow-hidden">
-                    <img
-                      src={logoUrl || "/baboon-icon.svg"}
-                      alt="Metaspace Logo"
-                      className="w-full h-full object-cover rounded-full"
-                    />
-                  </div>
+                  <MetaspaceLogo size={56} logoUrl={logoUrl} className="rounded-full shadow-md bg-white border border-gray-100" />
                 </foreignObject>
               </g>
             </svg>

@@ -1,91 +1,74 @@
+export type TabType = "home" | "about" | "what-we-do" | "ventures" | "insights" | "contact" | "admin";
+
 export interface Venture {
   id: string;
-  title: string;
-  tagline: string;
-  description: string;
-  category: string;
-  iconName: string;
-  impactMetric?: string;
-  link?: string;
-  featured?: boolean;
-}
-
-export interface ServiceItem {
-  id: string;
-  title: string;
-  description: string;
-  iconName: string;
-  highlight?: boolean;
-  features?: string[];
-}
-
-export interface StatItem {
-  id: string;
-  number: string;
-  label: string;
-  iconName: string;
-}
-
-export interface LayoutSection {
-  id: string;
   name: string;
-  title: string;
-  order: number;
-  enabled: boolean;
-}
-
-export interface ThemeConfig {
-  primaryNavy: string;
-  secondaryRed: string;
-  backgroundColor: string;
-  textColor: string;
-  fontHeading: string;
-  fontBody: string;
-  borderRadius: string;
-  logoType: 'default-image3' | 'custom-image' | 'text-only';
-  customLogoUrl?: string;
-}
-
-export interface SiteContent {
-  companyName: string;
   tagline: string;
-  heroHeadline: string;
-  heroSubheadline: string;
-  aboutHeadline: string;
-  aboutText: string;
-  ecosystemHeadline: string;
-  contactEmail: string;
-  contactPhone: string;
-  locationAddress: string;
-  whatsappNumber: string;
+  description: string;
+  fullDetails: string;
+  iconName: "school" | "rocket" | "bus" | "heart" | "cpu" | "code" | "sparkles" | string;
+  color: string;
+  url?: string;
+  stats: { label: string; value: string }[];
+  impactPoints: string[];
+  founderQuote?: string;
 }
 
-export interface SiteConfig {
-  content: SiteContent;
-  theme: ThemeConfig;
-  sections: LayoutSection[];
-  ventures: Venture[];
-  services: ServiceItem[];
-  stats: StatItem[];
+export interface ServiceOffer {
+  id: string;
+  title: string;
+  iconName: "studio" | "transform" | "ecosystem" | "advisory";
+  shortDesc: string;
+  longDesc: string;
+  keyFeatures: string[];
+  caseStudy?: {
+    title: string;
+    description: string;
+    metric: string;
+  };
+}
+
+export interface InsightPost {
+  id: string;
+  title: string;
+  category: "Venture Builder" | "Digital Transformation" | "Startup Policy" | "Healthcare Tech";
+  date: string;
+  author: string;
+  readTime: string;
+  summary: string;
+  content: string;
+  image: string;
 }
 
 export interface ChatMessage {
-  id: string;
-  sender: 'user' | 'companion' | 'system';
-  text: string;
+  role: "user" | "model";
+  parts: { text: string }[];
   timestamp: string;
-  actionType?: 'lead_capture' | 'whatsapp_referral' | 'consultation';
 }
 
-export interface Lead {
+export interface Consultation {
   id: string;
   name: string;
   email: string;
-  phone?: string;
-  company?: string;
-  interest?: string;
-  message?: string;
-  source: 'companion_chatbot' | 'contact_form' | 'consultation_booking';
-  status: 'new' | 'contacted' | 'qualified' | 'converted';
+  organization: string;
+  sector: string;
+  service: string;
+  message: string;
   createdAt: string;
+  status: "pending" | "scheduled" | "completed";
+}
+
+export interface ContactInquiry {
+  id: string;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface ClientLogo {
+  id: string;
+  name: string;
+  logoUrl: string;
 }

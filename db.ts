@@ -3,7 +3,7 @@ import path from "path";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Define TS interfaces for our store
-import { Venture, ServiceOffer, InsightPost, Consultation, ContactInquiry } from "./src/types";
+import { Venture, ServiceOffer, InsightPost, Consultation, ContactInquiry, ClientLogo } from "./src/types";
 
 export interface AdminUser {
   username: string;
@@ -31,6 +31,7 @@ export interface SiteConfig {
   what_we_do_desc: string;
   ventures: Venture[];
   services: ServiceOffer[];
+  clientLogos?: ClientLogo[];
   teamMembers: { name: string; role: string; bio: string; avatar: string }[];
   insights: InsightPost[];
   whatsapp_number?: string;
@@ -383,6 +384,48 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
         description: "Advising regional committees on structuring policies that incentivize tech talent retention, developer tax credits, and seamless digital payment models.",
         metric: "1 Subnational Policy Guided"
       }
+    }
+  ],
+  clientLogos: [
+    {
+      id: "client-1",
+      name: "Edo Innovates",
+      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-2",
+      name: "Ugbekun Educational Trust",
+      logoUrl: "https://images.unsplash.com/photo-1599305445671-ac291c95aaa9?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-3",
+      name: "Cyona Health Systems",
+      logoUrl: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-4",
+      name: "EduRide Mobility Hub",
+      logoUrl: "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-5",
+      name: "Oghowa Tech Labs",
+      logoUrl: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-6",
+      name: "Pan-African Digital Labs",
+      logoUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-7",
+      name: "Zenith Capital & Tech",
+      logoUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop"
+    },
+    {
+      id: "client-8",
+      name: "Silicon Lagoon Alliance",
+      logoUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
     }
   ],
   teamMembers: [

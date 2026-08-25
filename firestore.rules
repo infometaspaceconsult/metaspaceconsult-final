@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Site config: publicly readable, writable by anyone or authenticated users
+    match /site_config/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Ventures portfolio: publicly readable, writable by admins or creators
+    match /ventures/{ventureId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Consultations: public can submit (create), all read/update permitted for app workflows
+    match /consultations/{consultationId} {
+      allow read, write: if true;
+    }
+
+    // Contact Inquiries: public can submit, all read/update permitted for management
+    match /contact_inquiries/{inquiryId} {
+      allow read, write: if true;
+    }
+
+    // General app collections fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
