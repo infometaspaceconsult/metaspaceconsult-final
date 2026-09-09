@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 interface MetaspaceLogoProps {
   className?: string;
@@ -15,20 +15,44 @@ export default function MetaspaceLogo({
   showText = false,
   textClassName = "text-slate-900 dark:text-white font-bold tracking-wider",
 }: MetaspaceLogoProps) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const resolvedLogoUrl = (logoUrl && logoUrl.trim() !== "") ? logoUrl : "/images.png";
-  const hasValidImage = !imgFailed && Boolean(resolvedLogoUrl && resolvedLogoUrl.trim() !== "");
+  // Ordered fallback candidate URLs
+  const candidateUrls: string[] = [
+    ...(logoUrl && logoUrl.trim() !== "" ? [logoUrl.trim()] : []),
+    "/images.png",
+    "/logo.png",
+    "images.png",
+    "logo.png"
+  ];
+
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [allFailed, setAllFailed] = useState(false);
+
+  // Reset candidate index when custom logoUrl changes
+  useEffect(() => {
+    setCandidateIndex(0);
+    setAllFailed(false);
+  }, [logoUrl]);
+
+  const handleImageError = () => {
+    if (candidateIndex < candidateUrls.length - 1) {
+      setCandidateIndex((prev) => prev + 1);
+    } else {
+      setAllFailed(true);
+    }
+  };
+
+  const currentSrc = candidateUrls[candidateIndex];
 
   return (
     <div className={`inline-flex items-center gap-3 ${className}`}>
       {/* 1. The Logo Icon / Emblem */}
-      {hasValidImage ? (
+      {!allFailed && currentSrc ? (
         <img
-          src={resolvedLogoUrl}
+          src={currentSrc}
           alt="Metaspace Consulting Logo"
           style={{ width: size, height: size }}
           className="rounded-full object-cover shadow-sm transition-transform duration-300 hover:scale-105 shrink-0"
-          onError={() => setImgFailed(true)}
+          onError={handleImageError}
         />
       ) : (
         /* Fallback Vector Emblem if image fails to load */

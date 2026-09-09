@@ -10,7 +10,9 @@ import { CLIENT_LOGOS_DATA } from "../data";
 import { 
   apiFetchSiteConfig, apiSaveSiteConfig, apiLoginAdmin, 
   apiFetchConsultations, apiFetchInquiries,
-  apiFetchAdminUsers, apiAddAdminUser, apiDeleteAdminUser
+  apiFetchAdminUsers, apiAddAdminUser, apiDeleteAdminUser,
+  apiUpdateConsultationStatus, apiDeleteConsultation, apiDeleteInquiry,
+  apiCreateConsultation
 } from "../lib/apiFallback";
 import { testFirestoreConnection } from "../lib/firebase";
 
@@ -74,7 +76,7 @@ export default function AdminDashboard() {
   const [footerVenturesLinks, setFooterVenturesLinks] = useState<{ label: string; tab: string }[]>([]);
 
   // Username and Password fields
-  const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "");
+  const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "superadmin");
   const [newPassword, setNewPassword] = useState("");
 
   // Live DB & Email state
@@ -319,16 +321,10 @@ export default function AdminDashboard() {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/admin/consultations/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, status: nextStatus })
-      });
-      if (res.ok) {
-        setMessage(`Consultation status updated to ${nextStatus}!`);
-        fetchAdminData();
-        setTimeout(() => setMessage(""), 3000);
-      }
+      await apiUpdateConsultationStatus(id, nextStatus, password);
+      setMessage(`Consultation status updated to ${nextStatus}!`);
+      fetchAdminData();
+      setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error(err);
     } finally {
@@ -340,16 +336,10 @@ export default function AdminDashboard() {
     if (!window.confirm("Are you sure you want to delete this consultation slot?")) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/admin/consultations/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password })
-      });
-      if (res.ok) {
-        setMessage("Consultation record deleted successfully.");
-        fetchAdminData();
-        setTimeout(() => setMessage(""), 3000);
-      }
+      await apiDeleteConsultation(id, password);
+      setMessage("Consultation record deleted successfully.");
+      fetchAdminData();
+      setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error(err);
     } finally {
@@ -487,16 +477,10 @@ export default function AdminDashboard() {
     if (!window.confirm("Are you sure you want to delete this inquiry from the inbox?")) return;
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/admin/contact/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password })
-      });
-      if (res.ok) {
-        setMessage("Inquiry message deleted.");
-        fetchAdminData();
-        setTimeout(() => setMessage(""), 3000);
-      }
+      await apiDeleteInquiry(id, password);
+      setMessage("Inquiry message deleted.");
+      fetchAdminData();
+      setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error(err);
     } finally {
@@ -512,26 +496,18 @@ export default function AdminDashboard() {
     setMessage("");
     setErrMessage("");
     try {
-      const res = await fetch("/api/admin/site-config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          password,
-          updates: { adminPassword: newPassword }
-        })
-      });
-
-      if (res.ok) {
+      const success = await apiSaveSiteConfig({ adminPassword: newPassword.trim() });
+      if (success) {
         setMessage("Admin password changed successfully! Please log in again with your new password.");
-        setPassword(newPassword);
-        localStorage.setItem("metaspace_admin_password", newPassword);
+        setPassword(newPassword.trim());
+        localStorage.setItem("metaspace_admin_password", newPassword.trim());
         setNewPassword("");
         setTimeout(() => setMessage(""), 4000);
       } else {
         setErrMessage("Failed to update password.");
       }
     } catch (err) {
-      setErrMessage("Server communication failed.");
+      setErrMessage("Update operation failed.");
     } finally {
       setIsLoading(false);
     }
@@ -549,17 +525,10 @@ export default function AdminDashboard() {
         message: "Simulated partner inquiry regarding structural co-investment opportunities for the Oghowa Accelerator 2026 Cohort."
       };
 
-      const response = await fetch("/api/consultations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mockConsult)
-      });
-
-      if (response.ok) {
-        setMessage("Simulated record injected successfully!");
-        fetchAdminData();
-        setTimeout(() => setMessage(""), 3000);
-      }
+      await apiCreateConsultation(mockConsult);
+      setMessage("Simulated record injected successfully!");
+      fetchAdminData();
+      setTimeout(() => setMessage(""), 3000);
     } catch (err) {
       console.error(err);
     } finally {
@@ -742,6 +711,11 @@ export default function AdminDashboard() {
               {isLoggingIn ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={14} />}
               <span>Sign In to Console</span>
             </button>
+            <div className="pt-2 text-center">
+              <span className="text-[10px] text-gray-400 font-sans">
+                Default Access: Username: <strong className="text-gray-600">superadmin</strong> · Password: <strong className="text-gray-600">admin</strong>
+              </span>
+            </div>
           </form>
         </div>
       </div>

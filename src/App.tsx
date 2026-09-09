@@ -313,9 +313,16 @@ export default function App() {
                       {lagosBridgeUrl && lagosBridgeUrl.trim() !== "" ? (
                         <img 
                           src={lagosBridgeUrl} 
-                          alt="Lagos Lekki Ikoyi Link Bridge Metaspace"
+                          alt="Metaspace Consulting Technology Headquarters"
                           referrerPolicy="no-referrer"
                           className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000"
+                          onError={(e) => {
+                            const target = e.currentTarget as HTMLImageElement;
+                            if (!target.dataset.triedFallback) {
+                              target.dataset.triedFallback = "true";
+                              target.src = "https://images.unsplash.com/photo-1542744094-3a31f103e35f?q=80&w=1200&auto=format&fit=crop";
+                            }
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-brand-blue to-brand-navy flex items-center justify-center text-white/50 text-sm">Metaspace Consulting</div>
