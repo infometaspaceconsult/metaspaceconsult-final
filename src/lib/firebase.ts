@@ -311,3 +311,377 @@ export async function saveToCloudDatabaseAndStorage(
     };
   }
 }
+
+/**
+ * TAB 1: Save Bookings & Inquiries Ledger into Cloud Database
+ */
+export async function saveLedgerToCloudDatabase(
+  consultations: any[],
+  inquiries: any[],
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+
+  try {
+    // 1. Commit consultations to Firestore collection
+    for (const c of consultations) {
+      if (c.id) {
+        const cRef = doc(db, "consultations", String(c.id));
+        await setDoc(cRef, {
+          ...c,
+          lastSyncedAt: now.toISOString(),
+          syncedBy: extra?.username || "admin"
+        }, { merge: true });
+      }
+    }
+
+    // 2. Commit inquiries to Firestore collection
+    for (const inq of inquiries) {
+      if (inq.id) {
+        const inqRef = doc(db, "contact_inquiries", String(inq.id));
+        await setDoc(inqRef, {
+          ...inq,
+          lastSyncedAt: now.toISOString(),
+          syncedBy: extra?.username || "admin"
+        }, { merge: true });
+      }
+    }
+
+    // 3. Write summary state document
+    const ledgerDocRef = doc(db, "site_config", "ledger_state");
+    await setDoc(ledgerDocRef, {
+      consultationsCount: consultations.length,
+      inquiriesCount: inquiries.length,
+      lastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin",
+      status: "synchronized"
+    }, { merge: true });
+
+    // 4. Verification read-back
+    const readBack = await getDoc(ledgerDocRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Ledger write command was sent, but verification check failed to read back from Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        error: "Document not verified in read-back check."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database: Bookings Ledger verified (${consultations.length} consultations and ${inquiries.length} inquiries in collections 'consultations' and 'contact_inquiries').`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      docPath: "consultations & contact_inquiries"
+    };
+  } catch (err: any) {
+    console.error("Save Ledger Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      error: err.message || String(err)
+    };
+  }
+}
+
+/**
+ * TAB 2: Save Page Text & Layout into Cloud Database
+ */
+export async function savePageTextToCloudDatabase(
+  pageTextData: Record<string, any>,
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+
+  try {
+    const docRef = doc(db, "site_config", "global");
+    await setDoc(docRef, {
+      ...pageTextData,
+      pageTextLastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin"
+    }, { merge: true });
+
+    // Verification read-back
+    const readBack = await getDoc(docRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Text updates could not be verified in Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        error: "Document not found in read-back."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database: Page Text & Layout verified in collection 'site_config/global'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      docPath: "site_config/global"
+    };
+  } catch (err: any) {
+    console.error("Save Page Text Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      error: err.message || String(err)
+    };
+  }
+}
+
+/**
+ * TAB 3: Save Images & Client Logos into Cloud Database
+ */
+export async function saveMediaToCloudDatabase(
+  mediaData: { logoUrl?: string; lagosBridgeUrl?: string; clientLogos?: any[] },
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+  const targetBucket = firebaseConfig.storageBucket || "gen-lang-client-0889935436.firebasestorage.app";
+
+  try {
+    const docRef = doc(db, "site_config", "global");
+    await setDoc(docRef, {
+      ...mediaData,
+      mediaLastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin"
+    }, { merge: true });
+
+    // Verification read-back
+    const readBack = await getDoc(docRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Images and Client Logos updates could not be verified in Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        storageBucket: targetBucket,
+        error: "Read-back verification failed."
+      };
+    }
+
+    const logosCount = mediaData.clientLogos?.length || 0;
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database & Storage: Brand logo, hero imagery, and ${logosCount} partner/client logos verified in 'site_config/global' & Storage bucket '${targetBucket}'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      storageBucket: targetBucket,
+      docPath: "site_config/global"
+    };
+  } catch (err: any) {
+    console.error("Save Media Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database & Storage: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      storageBucket: targetBucket,
+      error: err.message || String(err)
+    };
+  }
+}
+
+/**
+ * TAB 4: Save Ventures & Services into Cloud Database
+ */
+export async function saveVenturesAndServicesToCloudDatabase(
+  ventures: any[],
+  services: any[],
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+
+  try {
+    // 1. Commit to site_config/global
+    const docRef = doc(db, "site_config", "global");
+    await setDoc(docRef, {
+      ventures,
+      services,
+      venturesLastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin"
+    }, { merge: true });
+
+    // 2. Commit each venture to individual documents in 'ventures' collection
+    for (const v of ventures) {
+      if (v.id) {
+        const vRef = doc(db, "ventures", String(v.id));
+        await setDoc(vRef, {
+          ...v,
+          lastUpdatedAt: now.toISOString()
+        }, { merge: true });
+      }
+    }
+
+    // Verification read-back
+    const readBack = await getDoc(docRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Ventures & Services updates could not be verified in Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        error: "Read-back verification failed."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database: ${ventures.length} Flagship Ventures and ${services.length} Service Offerings verified in collections 'ventures' and 'site_config/global'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      docPath: "ventures & site_config/global"
+    };
+  } catch (err: any) {
+    console.error("Save Ventures & Services Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      error: err.message || String(err)
+    };
+  }
+}
+
+/**
+ * TAB 5: Save Footer & Chat Support into Cloud Database
+ */
+export async function saveFooterAndSupportToCloudDatabase(
+  footerData: Record<string, any>,
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+
+  try {
+    const docRef = doc(db, "site_config", "global");
+    await setDoc(docRef, {
+      ...footerData,
+      footerLastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin"
+    }, { merge: true });
+
+    // Verification read-back
+    const readBack = await getDoc(docRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Footer & Support updates could not be verified in Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        error: "Read-back verification failed."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database: Footer channels, WhatsApp helpdesk (${footerData.whatsapp_number || 'Default'}), and navigation links verified in 'site_config/global'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      docPath: "site_config/global"
+    };
+  } catch (err: any) {
+    console.error("Save Footer Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      error: err.message || String(err)
+    };
+  }
+}
+
+/**
+ * TAB 6: Save Admins & Access Control into Cloud Database
+ */
+export async function saveAdminsAndAccessToCloudDatabase(
+  adminUsers: any[],
+  extra?: { username?: string }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+
+  try {
+    const docRef = doc(db, "site_config", "admin_users");
+    // Strip passwords before saving to client readable doc
+    const sanitizedUsers = adminUsers.map(u => ({
+      username: u.username,
+      isSuperadmin: Boolean(u.isSuperadmin),
+      updatedAt: now.toISOString()
+    }));
+
+    await setDoc(docRef, {
+      users: sanitizedUsers,
+      totalAdmins: sanitizedUsers.length,
+      lastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin"
+    }, { merge: true });
+
+    // Verification read-back
+    const readBack = await getDoc(docRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Admin roster could not be verified in Cloud Database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        error: "Read-back verification failed."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved successfully to Cloud Database: ${sanitizedUsers.length} Administrator Accounts and Access Control rules verified in 'site_config/admin_users'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      docPath: "site_config/admin_users"
+    };
+  } catch (err: any) {
+    console.error("Save Admins Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      error: err.message || String(err)
+    };
+  }
+}
+

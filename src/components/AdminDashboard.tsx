@@ -4,7 +4,7 @@ import {
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
   Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, EyeOff, AlertCircle,
   Briefcase, UserPlus, UserCheck, UserX, Users, Database, Send,
-  CheckCircle2, AlertTriangle, CloudUpload, HardDrive
+  CheckCircle2, AlertTriangle, CloudUpload, HardDrive, Rocket, MessageSquare
 } from "lucide-react";
 import { Consultation, ContactInquiry, Venture, ServiceOffer, ClientLogo } from "../types";
 import { CLIENT_LOGOS_DATA } from "../data";
@@ -15,7 +15,77 @@ import {
   apiUpdateConsultationStatus, apiDeleteConsultation, apiDeleteInquiry,
   apiCreateConsultation
 } from "../lib/apiFallback";
-import { testFirestoreConnection, saveToCloudDatabaseAndStorage, CloudSaveNotice } from "../lib/firebase";
+import { 
+  testFirestoreConnection, 
+  saveToCloudDatabaseAndStorage, 
+  saveLedgerToCloudDatabase,
+  savePageTextToCloudDatabase,
+  saveMediaToCloudDatabase,
+  saveVenturesAndServicesToCloudDatabase,
+  saveFooterAndSupportToCloudDatabase,
+  saveAdminsAndAccessToCloudDatabase,
+  CloudSaveNotice 
+} from "../lib/firebase";
+
+function CloudSaveNoticeBanner({ notice, onDismiss }: { notice: CloudSaveNotice | null; onDismiss?: () => void }) {
+  if (!notice) return null;
+  return (
+    <div
+      className={`p-4 rounded-2xl border text-xs leading-relaxed transition-all duration-200 animate-in fade-in shadow-xs ${
+        notice.saved
+          ? "bg-emerald-50/95 border-emerald-300 text-emerald-950"
+          : "bg-rose-50/95 border-rose-300 text-rose-950"
+      }`}
+    >
+      <div className="flex items-center justify-between pb-2 mb-2 border-b border-black/5">
+        <div className="flex items-center gap-2 font-bold">
+          {notice.saved ? (
+            <CheckCircle2 size={17} className="text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle size={17} className="text-rose-600 shrink-0" />
+          )}
+          <span className={`text-xs font-black uppercase tracking-wider ${notice.saved ? "text-emerald-900" : "text-rose-900"}`}>
+            {notice.saved ? "Data Indeed Saved Successfully into DB!" : "Notice: Data Was NOT Saved to DB"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-2xs ${
+            notice.saved ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"
+          }`}>
+            {notice.saved ? "Verified 🟢" : "Failed 🔴"}
+          </span>
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="text-gray-400 hover:text-gray-700 p-0.5 transition cursor-pointer text-xs font-bold"
+              title="Dismiss notice"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <p className={`text-xs font-medium font-sans ${notice.saved ? "text-emerald-800" : "text-rose-800"}`}>
+        {notice.message}
+      </p>
+
+      <div className="mt-2.5 pt-2 border-t border-black/5 flex flex-wrap items-center justify-between gap-2 text-[10px] text-gray-500 font-mono">
+        <span>Recorded Timestamp: {notice.timestamp}</span>
+        {notice.saved ? (
+          <span className="text-emerald-700 font-bold flex items-center gap-1">
+            Read-Back Confirmed ✓ {notice.docPath ? `(${notice.docPath})` : ""}
+          </span>
+        ) : (
+          <span className="text-rose-700 font-bold flex items-center gap-1">
+            Write Verification Incomplete ✕
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   // Auth State
@@ -87,6 +157,25 @@ export default function AdminDashboard() {
   const [cloudLastSavedAt, setCloudLastSavedAt] = useState("");
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [cloudSaveNotice, setCloudSaveNotice] = useState<CloudSaveNotice | null>(null);
+
+  // Per-page / Per-tab Cloud DB Save Notices & States
+  const [tabSaveNotices, setTabSaveNotices] = useState<Record<string, CloudSaveNotice | null>>({
+    ledger: null,
+    text_editor: null,
+    media_editor: null,
+    ventures_services: null,
+    footer_editor: null,
+    admin_security: null
+  });
+  const [tabIsSaving, setTabIsSaving] = useState<Record<string, boolean>>({
+    ledger: false,
+    text_editor: false,
+    media_editor: false,
+    ventures_services: false,
+    footer_editor: false,
+    admin_security: false
+  });
+
   const [firestoreTestResult, setFirestoreTestResult] = useState("");
   const [isTestingFirestore, setIsTestingFirestore] = useState(false);
 
@@ -231,55 +320,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddAdminUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newAdminUsername.trim()) return;
-    setIsLoading(true);
-    setMessage("");
-    setErrMessage("");
-    try {
-      const res = await apiAddAdminUser(password, {
-        username: newAdminUsername.trim(),
-        password: newAdminPassword.trim() || undefined,
-        isSuperadmin: newAdminIsSuperadmin
-      });
-      if (res.success) {
-        setMessage(`Administrator account for "${newAdminUsername.trim()}" created/updated successfully!`);
-        setNewAdminUsername("");
-        setNewAdminPassword("");
-        if (res.users) setAdminUsers(res.users);
-        setTimeout(() => setMessage(""), 4000);
-      } else {
-        setErrMessage(res.error || "Failed to add administrator.");
-      }
-    } catch (err: any) {
-      setErrMessage("Error processing administrator creation.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRevokeAdminUser = async (targetUsername: string) => {
-    if (!window.confirm(`Are you sure you want to revoke access for administrator "${targetUsername}"?`)) return;
-    setIsLoading(true);
-    setMessage("");
-    setErrMessage("");
-    try {
-      const res = await apiDeleteAdminUser(password, targetUsername);
-      if (res.success) {
-        setMessage(`Revoked access for administrator "${targetUsername}".`);
-        if (res.users) setAdminUsers(res.users);
-        setTimeout(() => setMessage(""), 4000);
-      } else {
-        setErrMessage(res.error || "Failed to revoke administrator access.");
-      }
-    } catch (err: any) {
-      setErrMessage("Error revoking access.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Generic config save helper
   const handleSaveConfig = async (updates: Record<string, any>) => {
     setIsLoading(true);
@@ -317,9 +357,11 @@ export default function AdminDashboard() {
       if (fieldName === "logoUrl") {
         setLogoUrl(base64String);
         handleSaveConfig({ logoUrl: base64String });
+        handleSaveMediaToCloudDb({ logoUrl: base64String });
       } else {
         setLagosBridgeUrl(base64String);
         handleSaveConfig({ lagosBridgeUrl: base64String });
+        handleSaveMediaToCloudDb({ lagosBridgeUrl: base64String });
       }
     };
     reader.readAsDataURL(file);
@@ -434,6 +476,305 @@ export default function AdminDashboard() {
       setMessage("Notice: Data was NOT saved to Cloud Database & Storage.");
     } finally {
       setIsSavingCloud(false);
+    }
+  };
+
+  // ==========================================
+  // PER-TAB CLOUD DATABASE SAVE & NOTICE HANDLERS
+  // ==========================================
+
+  // TAB 1: Save Bookings Ledger to DB
+  const handleSaveLedgerToCloudDb = async (overrideConsults?: Consultation[], overrideInquiries?: ContactInquiry[]) => {
+    setTabIsSaving(prev => ({ ...prev, ledger: true }));
+    try {
+      const cList = overrideConsults || consultations;
+      const iList = overrideInquiries || inquiries;
+      const notice = await saveLedgerToCloudDatabase(cList, iList, { username });
+      setTabSaveNotices(prev => ({ ...prev, ledger: notice }));
+      if (notice.saved) {
+        setMessage("Bookings Ledger saved and verified in Cloud Database!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Ledger was NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        ledger: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, ledger: false }));
+    }
+  };
+
+  // TAB 2: Save Page Text & Layout to DB
+  const handleSavePageTextToCloudDb = async (customPayload?: Record<string, any>) => {
+    setTabIsSaving(prev => ({ ...prev, text_editor: true }));
+    try {
+      const payload = {
+        home_hero_subtitle: homeHeroSubtitle,
+        home_hero_title: homeHeroTitle,
+        home_hero_title_color: homeHeroTitleColor,
+        home_hero_title_highlight_color: homeHeroTitleHighlightColor,
+        home_hero_desc: homeHeroDesc,
+        about_hero_title: aboutHeroTitle,
+        about_hero_desc: aboutHeroDesc,
+        about_mission_title: aboutMissionTitle,
+        about_mission_text: aboutMissionText,
+        what_we_do_title: whatWeDoTitle,
+        what_we_do_desc: whatWeDoDesc,
+        ...(customPayload || {})
+      };
+      const notice = await savePageTextToCloudDatabase(payload, { username });
+      await apiSaveSiteConfig(payload);
+      setTabSaveNotices(prev => ({ ...prev, text_editor: notice }));
+      if (notice.saved) {
+        setMessage("Page Text & Layout saved and verified in Cloud Database!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Page Text was NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        text_editor: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, text_editor: false }));
+    }
+  };
+
+  // TAB 3: Save Images & Client Logos to DB
+  const handleSaveMediaToCloudDb = async (
+    optionsOrLogos?: ClientLogo[] | { logoUrl?: string; lagosBridgeUrl?: string; clientLogos?: ClientLogo[] },
+    overrideLogoUrl?: string,
+    overrideLagosBridge?: string
+  ) => {
+    setTabIsSaving(prev => ({ ...prev, media_editor: true }));
+    try {
+      let finalLogos = clientLogos;
+      let finalLogoUrl = logoUrl;
+      let finalLagosBridgeUrl = lagosBridgeUrl;
+
+      if (Array.isArray(optionsOrLogos)) {
+        finalLogos = optionsOrLogos;
+        if (overrideLogoUrl !== undefined) finalLogoUrl = overrideLogoUrl;
+        if (overrideLagosBridge !== undefined) finalLagosBridgeUrl = overrideLagosBridge;
+      } else if (optionsOrLogos && typeof optionsOrLogos === "object") {
+        if (optionsOrLogos.clientLogos !== undefined) finalLogos = optionsOrLogos.clientLogos;
+        if (optionsOrLogos.logoUrl !== undefined) finalLogoUrl = optionsOrLogos.logoUrl;
+        if (optionsOrLogos.lagosBridgeUrl !== undefined) finalLagosBridgeUrl = optionsOrLogos.lagosBridgeUrl;
+      }
+
+      const payload = {
+        logoUrl: finalLogoUrl,
+        lagosBridgeUrl: finalLagosBridgeUrl,
+        clientLogos: finalLogos
+      };
+      const notice = await saveMediaToCloudDatabase(payload, { username });
+      await apiSaveSiteConfig(payload);
+      setTabSaveNotices(prev => ({ ...prev, media_editor: notice }));
+      if (notice.saved) {
+        setMessage("Images & Client Logos saved and verified in Cloud Database & Storage!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Images & Logos were NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        media_editor: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database & Storage: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          storageBucket: cloudStorageBucket,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, media_editor: false }));
+    }
+  };
+
+  // TAB 4: Save Ventures & Services to DB
+  const handleSaveVenturesServicesToCloudDb = async (overrideVentures?: Venture[], overrideServices?: ServiceOffer[]) => {
+    setTabIsSaving(prev => ({ ...prev, ventures_services: true }));
+    try {
+      const vToSave = overrideVentures || ventures;
+      const sToSave = overrideServices || services;
+      const notice = await saveVenturesAndServicesToCloudDatabase(vToSave, sToSave, { username });
+      await apiSaveSiteConfig({ ventures: vToSave, services: sToSave });
+      setTabSaveNotices(prev => ({ ...prev, ventures_services: notice }));
+      if (notice.saved) {
+        setMessage("Ventures & Services saved and verified in Cloud Database!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Ventures & Services were NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        ventures_services: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, ventures_services: false }));
+    }
+  };
+
+  // TAB 5: Save Footer & Chat Support to DB
+  const handleSaveFooterToCloudDb = async (overridePayload?: Record<string, any>) => {
+    setTabIsSaving(prev => ({ ...prev, footer_editor: true }));
+    try {
+      const payload = overridePayload || {
+        whatsapp_number: whatsappNumber,
+        footer_tagline: footerTagline,
+        footer_desc: footerDesc,
+        footer_email: footerEmail,
+        footer_phone: footerPhone,
+        footer_address: footerAddress,
+        footer_linkedin: footerLinkedin,
+        footer_twitter: footerTwitter,
+        footer_facebook: footerFacebook,
+        footer_instagram: footerInstagram,
+        footer_quick_links: footerQuickLinks,
+        footer_ventures_links: footerVenturesLinks
+      };
+      const notice = await saveFooterAndSupportToCloudDatabase(payload, { username });
+      await apiSaveSiteConfig(payload);
+      setTabSaveNotices(prev => ({ ...prev, footer_editor: notice }));
+      if (notice.saved) {
+        setMessage("Footer & Chat Support saved and verified in Cloud Database!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Footer & Support settings were NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        footer_editor: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, footer_editor: false }));
+    }
+  };
+
+  // TAB 6: Save Admins & Access to DB
+  const handleSaveAdminsToCloudDb = async (overrideUsers?: { username: string; isSuperadmin: boolean }[]) => {
+    setTabIsSaving(prev => ({ ...prev, admin_security: true }));
+    try {
+      const usersToSave = overrideUsers || adminUsers;
+      const notice = await saveAdminsAndAccessToCloudDatabase(usersToSave, { username });
+      setTabSaveNotices(prev => ({ ...prev, admin_security: notice }));
+      if (notice.saved) {
+        setMessage("Admins & Access Control saved and verified in Cloud Database!");
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(notice.message || "Notice: Admins roster was NOT saved to Cloud DB.");
+      }
+    } catch (err: any) {
+      setTabSaveNotices(prev => ({
+        ...prev,
+        admin_security: {
+          saved: false,
+          message: `Data was NOT saved to Cloud Database: ${err.message || String(err)}`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+          verified: false,
+          databaseId: cloudDbId,
+          error: err.message
+        }
+      }));
+    } finally {
+      setTabIsSaving(prev => ({ ...prev, admin_security: false }));
+    }
+  };
+
+  const handleAddAdminUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminUsername.trim()) return;
+    setIsLoading(true);
+    setMessage("");
+    setErrMessage("");
+    try {
+      const res = await apiAddAdminUser(password, {
+        username: newAdminUsername.trim(),
+        password: newAdminPassword.trim() || undefined,
+        isSuperadmin: newAdminIsSuperadmin
+      });
+      if (res.success) {
+        setMessage(`Administrator account for "${newAdminUsername.trim()}" created/updated successfully!`);
+        setNewAdminUsername("");
+        setNewAdminPassword("");
+        if (res.users) {
+          setAdminUsers(res.users);
+          handleSaveAdminsToCloudDb(res.users);
+        }
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(res.error || "Failed to add administrator.");
+      }
+    } catch (err: any) {
+      setErrMessage("Error processing administrator creation.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRevokeAdminUser = async (targetUsername: string) => {
+    if (!window.confirm(`Are you sure you want to revoke access for administrator "${targetUsername}"?`)) return;
+    setIsLoading(true);
+    setMessage("");
+    setErrMessage("");
+    try {
+      const res = await apiDeleteAdminUser(password, targetUsername);
+      if (res.success) {
+        setMessage(`Revoked access for administrator "${targetUsername}".`);
+        if (res.users) {
+          setAdminUsers(res.users);
+          handleSaveAdminsToCloudDb(res.users);
+        }
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage(res.error || "Failed to revoke administrator access.");
+      }
+    } catch (err: any) {
+      setErrMessage("Error revoking access.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -632,6 +973,7 @@ export default function AdminDashboard() {
     const updated = [...clientLogos, newLogo];
     setClientLogos(updated);
     handleSaveConfig({ clientLogos: updated });
+    handleSaveMediaToCloudDb({ clientLogos: updated });
     setMessage("New client logo added successfully!");
   };
 
@@ -647,6 +989,7 @@ export default function AdminDashboard() {
     const updated = clientLogos.filter((_, i) => i !== index);
     setClientLogos(updated);
     handleSaveConfig({ clientLogos: updated });
+    handleSaveMediaToCloudDb({ clientLogos: updated });
     setMessage(`Removed "${logoName}" from client carousel.`);
   };
 
@@ -662,6 +1005,7 @@ export default function AdminDashboard() {
         list[index] = { ...list[index], logoUrl: result };
         setClientLogos(list);
         handleSaveConfig({ clientLogos: list });
+        handleSaveMediaToCloudDb({ clientLogos: list });
         setMessage(`Uploaded custom logo for "${list[index].name}"!`);
       }
     };
@@ -672,6 +1016,7 @@ export default function AdminDashboard() {
     if (!window.confirm("Reset client logos back to original institutional partners?")) return;
     setClientLogos(CLIENT_LOGOS_DATA);
     handleSaveConfig({ clientLogos: CLIENT_LOGOS_DATA });
+    handleSaveMediaToCloudDb({ clientLogos: CLIENT_LOGOS_DATA });
     setMessage("Client logos reset to default showcase.");
   };
 
@@ -866,7 +1211,34 @@ export default function AdminDashboard() {
 
       {/* TAB 1: SUBMISSIONS LEDGER */}
       {activeAdminTab === "ledger" && (
-        <div className="space-y-8 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <Calendar size={16} className="text-brand-crimson" />
+                Bookings Ledger & Inquiries Database
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Manage active consultation bookings, partnership requests, and client submissions synchronized with Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveLedgerToCloudDb()}
+              disabled={tabIsSaving.ledger}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.ledger ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.ledger ? "Saving to DB & Verifying..." : "Save Bookings Ledger to DB"}</span>
+            </button>
+          </div>
+
+          <CloudSaveNoticeBanner 
+            notice={tabSaveNotices.ledger} 
+            onDismiss={() => setTabSaveNotices(prev => ({ ...prev, ledger: null }))} 
+          />
+
           {/* Quick Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
@@ -1005,6 +1377,35 @@ export default function AdminDashboard() {
       {/* TAB 2: PAGE TEXT EDITOR */}
       {activeAdminTab === "text_editor" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="lg:col-span-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <Edit3 size={16} className="text-brand-crimson" />
+                Page Text & Layout Configuration
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Edit headlines, color themes, mission statements, and core copy across Home, About Us, and Services synchronized to Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSavePageTextToCloudDb()}
+              disabled={tabIsSaving.text_editor}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.text_editor ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.text_editor ? "Saving to DB & Verifying..." : "Save Page Text & Layout to DB"}</span>
+            </button>
+          </div>
+
+          <div className="lg:col-span-12">
+            <CloudSaveNoticeBanner 
+              notice={tabSaveNotices.text_editor} 
+              onDismiss={() => setTabSaveNotices(prev => ({ ...prev, text_editor: null }))} 
+            />
+          </div>
+
           <div className="lg:col-span-8 space-y-6">
             
             {/* HOME PAGE HERO */}
@@ -1079,7 +1480,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <button
-                  onClick={() => handleSaveConfig({
+                  onClick={() => handleSavePageTextToCloudDb({
                     home_hero_subtitle: homeHeroSubtitle,
                     home_hero_title: homeHeroTitle,
                     home_hero_title_color: homeHeroTitleColor,
@@ -1139,7 +1540,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <button
-                  onClick={() => handleSaveConfig({
+                  onClick={() => handleSavePageTextToCloudDb({
                     about_hero_title: aboutHeroTitle,
                     about_hero_desc: aboutHeroDesc,
                     about_mission_title: aboutMissionTitle,
@@ -1178,7 +1579,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <button
-                  onClick={() => handleSaveConfig({
+                  onClick={() => handleSavePageTextToCloudDb({
                     what_we_do_title: whatWeDoTitle,
                     what_we_do_desc: whatWeDoDesc
                   })}
@@ -1557,15 +1958,43 @@ export default function AdminDashboard() {
 
       {/* TAB 3: MEDIA EDITOR */}
       {activeAdminTab === "media_editor" && (
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-8 animate-in fade-in duration-200">
-          <div className="border-b border-gray-50 pb-3">
-            <h3 className="font-display font-bold text-sm text-brand-blue">
-              Logo & Hero Image Placements
-            </h3>
-            <p className="text-[11px] text-gray-400">
-              Select image files (PNG, JPG, SVG) from your computer to replace key assets instantly.
-            </p>
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <ImageIcon size={16} className="text-brand-crimson" />
+                Images & Client Logos Placements
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Replace brand logo, Lagos bridge hero imagery, and customize partner logos carousel synchronized with Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveMediaToCloudDb()}
+              disabled={tabIsSaving.media_editor}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.media_editor ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.media_editor ? "Saving to DB & Verifying..." : "Save Images & Client Logos to DB"}</span>
+            </button>
           </div>
+
+          <CloudSaveNoticeBanner 
+            notice={tabSaveNotices.media_editor} 
+            onDismiss={() => setTabSaveNotices(prev => ({ ...prev, media_editor: null }))} 
+          />
+
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-8">
+            <div className="border-b border-gray-50 pb-3">
+              <h3 className="font-display font-bold text-sm text-brand-blue">
+                Logo & Hero Image Placements
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Select image files (PNG, JPG, SVG) from your computer to replace key assets instantly.
+              </p>
+            </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
@@ -1812,12 +2241,39 @@ export default function AdminDashboard() {
 
           </div>
         </div>
+      </div>
       )}
 
       {/* TAB 4: VENTURES & SERVICES */}
       {activeAdminTab === "ventures_services" && (
-        <div className="space-y-8 animate-in fade-in duration-200">
-          
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <Rocket size={16} className="text-brand-crimson" />
+                Ventures Portfolio & Services Offerings
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Manage flagship venture investments, executive taglines, operational frameworks, and strategic advisory pillars in Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveVenturesServicesToCloudDb()}
+              disabled={tabIsSaving.ventures_services}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.ventures_services ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.ventures_services ? "Saving to DB & Verifying..." : "Save Ventures & Services to DB"}</span>
+            </button>
+          </div>
+
+          <CloudSaveNoticeBanner 
+            notice={tabSaveNotices.ventures_services} 
+            onDismiss={() => setTabSaveNotices(prev => ({ ...prev, ventures_services: null }))} 
+          />
+
           {/* FLAGSHIP VENTURES EDITOR */}
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-6">
             <div className="border-b border-gray-50 pb-3 flex flex-wrap justify-between items-center gap-3">
@@ -1838,10 +2294,11 @@ export default function AdminDashboard() {
                   <span>Add Venture</span>
                 </button>
                 <button
-                  onClick={() => handleSaveConfig({ ventures })}
-                  className="px-4 py-2 bg-brand-crimson hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
+                  onClick={() => handleSaveVenturesServicesToCloudDb()}
+                  disabled={tabIsSaving.ventures_services}
+                  className="px-4 py-2 bg-brand-crimson hover:bg-red-800 disabled:opacity-50 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow cursor-pointer"
                 >
-                  <Save size={12} />
+                  {tabIsSaving.ventures_services ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                   <span>Save Venture Changes</span>
                 </button>
               </div>
@@ -1934,10 +2391,11 @@ export default function AdminDashboard() {
                 </p>
               </div>
               <button
-                onClick={() => handleSaveConfig({ services })}
-                className="px-4 py-2 bg-brand-crimson hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
+                onClick={() => handleSaveVenturesServicesToCloudDb()}
+                disabled={tabIsSaving.ventures_services}
+                className="px-4 py-2 bg-brand-crimson hover:bg-red-800 disabled:opacity-50 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow cursor-pointer"
               >
-                <Save size={12} />
+                {tabIsSaving.ventures_services ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                 <span>Save Service Changes</span>
               </button>
             </div>
@@ -1991,7 +2449,33 @@ export default function AdminDashboard() {
 
       {/* TAB 5: FOOTER & CHAT SUPPORT */}
       {activeAdminTab === "footer_editor" && (
-        <div className="space-y-8 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <MessageSquare size={16} className="text-brand-crimson" />
+                Footer & Chat Support Configuration
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Update customer WhatsApp helpdesk, institutional email/address contacts, and footer navigation links in Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveFooterToCloudDb()}
+              disabled={tabIsSaving.footer_editor}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.footer_editor ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.footer_editor ? "Saving to DB & Verifying..." : "Save Footer & Support to DB"}</span>
+            </button>
+          </div>
+
+          <CloudSaveNoticeBanner 
+            notice={tabSaveNotices.footer_editor} 
+            onDismiss={() => setTabSaveNotices(prev => ({ ...prev, footer_editor: null }))} 
+          />
           
           {/* SECURITY & ADMIN CREDENTIALS CARD */}
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4">
@@ -2042,7 +2526,7 @@ export default function AdminDashboard() {
                 </p>
               </div>
               <button
-                onClick={() => handleSaveConfig({
+                onClick={() => handleSaveFooterToCloudDb({
                   whatsapp_number: whatsappNumber,
                   footer_tagline: footerTagline,
                   footer_desc: footerDesc,
@@ -2056,9 +2540,10 @@ export default function AdminDashboard() {
                   footer_quick_links: footerQuickLinks,
                   footer_ventures_links: footerVenturesLinks
                 })}
-                className="px-4 py-2 bg-brand-crimson hover:bg-red-800 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow"
+                disabled={tabIsSaving.footer_editor}
+                className="px-4 py-2 bg-brand-crimson hover:bg-red-800 disabled:opacity-50 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition shadow cursor-pointer"
               >
-                <Save size={12} />
+                {tabIsSaving.footer_editor ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                 <span>Save All Footer Settings</span>
               </button>
             </div>
@@ -2320,7 +2805,33 @@ export default function AdminDashboard() {
 
       {/* TAB 6: ADMIN USERS & SECURITY */}
       {activeAdminTab === "admin_security" && (
-        <div className="space-y-8 animate-in fade-in duration-200">
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Action Bar & Save to DB Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white border border-gray-100 p-4 rounded-2xl shadow-xs">
+            <div>
+              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-2">
+                <ShieldCheck size={16} className="text-brand-crimson" />
+                Console Administrators & Access Control
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                Manage active console user accounts, assign admin roles, revoke permissions, and synchronize privileges to Cloud Firestore.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleSaveAdminsToCloudDb()}
+              disabled={tabIsSaving.admin_security}
+              className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              {tabIsSaving.admin_security ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+              <span>{tabIsSaving.admin_security ? "Saving to DB & Verifying..." : "Save Admins & Access to DB"}</span>
+            </button>
+          </div>
+
+          <CloudSaveNoticeBanner 
+            notice={tabSaveNotices.admin_security} 
+            onDismiss={() => setTabSaveNotices(prev => ({ ...prev, admin_security: null }))} 
+          />
           
           {/* ADMIN ACCOUNTS & REVOCATION CARD */}
           <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-6">
