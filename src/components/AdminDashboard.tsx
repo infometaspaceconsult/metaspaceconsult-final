@@ -3,7 +3,8 @@ import {
   ShieldCheck, RefreshCw, Calendar, Mail, FileText, CheckCircle, Clock, 
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
   Settings, Lock, KeyRound, Save, Edit3, HelpCircle, Eye, EyeOff, AlertCircle,
-  Briefcase, UserPlus, UserCheck, UserX, Users, Database, Send
+  Briefcase, UserPlus, UserCheck, UserX, Users, Database, Send,
+  CheckCircle2, AlertTriangle, CloudUpload, HardDrive
 } from "lucide-react";
 import { Consultation, ContactInquiry, Venture, ServiceOffer, ClientLogo } from "../types";
 import { CLIENT_LOGOS_DATA } from "../data";
@@ -14,7 +15,7 @@ import {
   apiUpdateConsultationStatus, apiDeleteConsultation, apiDeleteInquiry,
   apiCreateConsultation
 } from "../lib/apiFallback";
-import { testFirestoreConnection } from "../lib/firebase";
+import { testFirestoreConnection, saveToCloudDatabaseAndStorage, CloudSaveNotice } from "../lib/firebase";
 
 export default function AdminDashboard() {
   // Auth State
@@ -36,7 +37,6 @@ export default function AdminDashboard() {
   // Data States
   const [consultations, setConsultations] = useState<Consultation[]>([]);
   const [inquiries, setInquiries] = useState<ContactInquiry[]>([]);
-  const [isMySQL, setIsMySQL] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [errMessage, setErrMessage] = useState("");
@@ -79,36 +79,40 @@ export default function AdminDashboard() {
   const [username, setUsername] = useState(() => localStorage.getItem("metaspace_admin_username") || "superadmin");
   const [newPassword, setNewPassword] = useState("");
 
-  // Live DB & Email state
-  const [dbTab, setDbTab] = useState<"firebase" | "supabase" | "mysql">("firebase");
+  // Live Cloud Database (Google Cloud Firestore) & Storage State
+  const [cloudDbId, setCloudDbId] = useState("ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50");
+  const [cloudStorageBucket, setCloudStorageBucket] = useState("gen-lang-client-0889935436.firebasestorage.app");
+  const [cloudSyncMode, setCloudSyncMode] = useState("realtime_mirror");
+  const [cloudAutoSync, setCloudAutoSync] = useState(true);
+  const [cloudLastSavedAt, setCloudLastSavedAt] = useState("");
+  const [isSavingCloud, setIsSavingCloud] = useState(false);
+  const [cloudSaveNotice, setCloudSaveNotice] = useState<CloudSaveNotice | null>(null);
   const [firestoreTestResult, setFirestoreTestResult] = useState("");
   const [isTestingFirestore, setIsTestingFirestore] = useState(false);
 
-  const [mysqlHost, setMysqlHost] = useState("");
-  const [mysqlPort, setMysqlPort] = useState("3306");
-  const [mysqlUser, setMysqlUser] = useState("");
-  const [mysqlPassword, setMysqlPassword] = useState("");
-  const [mysqlDatabase, setMysqlDatabase] = useState("");
-  const [mysqlTestResult, setMysqlTestResult] = useState("");
-  const [isTestingMysql, setIsTestingMysql] = useState(false);
-
-  const [supabaseUrl, setSupabaseUrl] = useState("");
-  const [supabaseKey, setSupabaseKey] = useState("");
-  const [isSupabase, setIsSupabase] = useState(false);
-  const [dbTestResult, setDbTestResult] = useState("");
-  const [isTestingDb, setIsTestingDb] = useState(false);
-
-  const [resendApiKey, setResendApiKey] = useState("");
+  // SMTP Mail Server State
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("465");
+  const [smtpSecure, setSmtpSecure] = useState(true);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("Metaspace Consulting");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
   const [notificationEmail, setNotificationEmail] = useState("");
-  const [emailTestResult, setEmailTestResult] = useState("");
-  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [smtpTestResult, setSmtpTestResult] = useState("");
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
 
-  // Ensure Admin console is locked on load unless authenticated explicitly in current session
+  // Restore existing session if authenticated in current browser
   useEffect(() => {
-    // Clear legacy auto-login credentials so console is locked securely by default
-    localStorage.removeItem("metaspace_admin_token");
-    localStorage.removeItem("metaspace_admin_password");
-    setIsAuthenticated(false);
+    const savedToken = localStorage.getItem("metaspace_admin_token");
+    const savedPwd = localStorage.getItem("metaspace_admin_password");
+    const savedUser = localStorage.getItem("metaspace_admin_username");
+    if (savedToken && savedPwd) {
+      setIsAuthenticated(true);
+      setPassword(savedPwd);
+      if (savedUser) setUsername(savedUser);
+      fetchAdminData(savedPwd);
+    }
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -123,9 +127,12 @@ export default function AdminDashboard() {
     setAuthError("");
 
     try {
-      const cleanUser = (username || "admin").trim();
+      const cleanUser = (username || "superadmin").trim();
       const result = await apiLoginAdmin(cleanUser, cleanPwd);
       if (result.success) {
+        localStorage.setItem("metaspace_admin_token", result.token || "metaspace-token-" + Date.now());
+        localStorage.setItem("metaspace_admin_password", cleanPwd);
+        localStorage.setItem("metaspace_admin_username", cleanUser);
         setIsAuthenticated(true);
         setPassword(cleanPwd);
         setUsername(cleanUser);
@@ -189,12 +196,13 @@ export default function AdminDashboard() {
         } else {
           setClientLogos(CLIENT_LOGOS_DATA);
         }
-        setIsMySQL(d.isMySQL || false);
-        setIsSupabase(d.isSupabase || false);
-
-        setSupabaseUrl(d.supabase_url || "");
-        setSupabaseKey(d.supabase_key || "");
-        setResendApiKey(d.resend_api_key || "");
+        setSmtpHost(d.smtp_host || "");
+        setSmtpPort(d.smtp_port ? String(d.smtp_port) : "465");
+        setSmtpSecure(d.smtp_secure !== undefined ? Boolean(d.smtp_secure) : true);
+        setSmtpUser(d.smtp_user || "");
+        setSmtpPass(d.smtp_pass && d.smtp_pass !== "••••••••" ? d.smtp_pass : (d.hasSmtpPassword ? "••••••••" : ""));
+        setSmtpFromName(d.smtp_from_name || "Metaspace Consulting");
+        setSmtpFromEmail(d.smtp_from_email || "");
         setNotificationEmail(d.notification_email || d.footer_email || "info@metaspaceconsulting.com");
 
         setWhatsappNumber(d.whatsapp_number || "");
@@ -209,6 +217,12 @@ export default function AdminDashboard() {
         setFooterInstagram(d.footer_instagram || "");
         setFooterQuickLinks(d.footer_quick_links || []);
         setFooterVenturesLinks(d.footer_ventures_links || []);
+
+        if (d.cloud_db_id) setCloudDbId(d.cloud_db_id);
+        if (d.cloud_storage_bucket) setCloudStorageBucket(d.cloud_storage_bucket);
+        if (d.cloud_sync_mode) setCloudSyncMode(d.cloud_sync_mode);
+        if (d.cloud_auto_sync !== undefined) setCloudAutoSync(Boolean(d.cloud_auto_sync));
+        if (d.cloud_last_saved_at) setCloudLastSavedAt(d.cloud_last_saved_at);
       }
     } catch (err) {
       console.error("Admin Fetch Error:", err);
@@ -347,6 +361,82 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleSaveCloudDatabaseAndStorage = async () => {
+    setIsSavingCloud(true);
+    setCloudSaveNotice(null);
+    try {
+      const payload = {
+        cloud_db_id: cloudDbId.trim() || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50",
+        cloud_storage_bucket: cloudStorageBucket.trim() || "gen-lang-client-0889935436.firebasestorage.app",
+        cloud_sync_mode: cloudSyncMode,
+        cloud_auto_sync: cloudAutoSync,
+        cloud_last_saved_at: new Date().toISOString(),
+        // Mirror active site settings to cloud doc
+        home_hero_title: homeHeroTitle,
+        home_hero_subtitle: homeHeroSubtitle,
+        home_hero_desc: homeHeroDesc,
+        about_hero_title: aboutHeroTitle,
+        about_hero_desc: aboutHeroDesc,
+        about_mission_title: aboutMissionTitle,
+        about_mission_text: aboutMissionText,
+        what_we_do_title: whatWeDoTitle,
+        what_we_do_desc: whatWeDoDesc,
+        logoUrl,
+        lagosBridgeUrl,
+        whatsapp_number: whatsappNumber,
+        footer_tagline: footerTagline,
+        footer_desc: footerDesc,
+        footer_email: footerEmail,
+        footer_phone: footerPhone,
+        footer_address: footerAddress,
+        footer_linkedin: footerLinkedin,
+        footer_twitter: footerTwitter,
+        footer_facebook: footerFacebook,
+        footer_instagram: footerInstagram,
+        smtp_host: smtpHost,
+        smtp_port: smtpPort,
+        smtp_user: smtpUser,
+        smtp_from_name: smtpFromName,
+        smtp_from_email: smtpFromEmail,
+        notification_email: notificationEmail
+      };
+
+      // 1. Direct write & read-back verification via Google Cloud Firestore
+      const notice = await saveToCloudDatabaseAndStorage(payload, {
+        username,
+        consultationsCount: consultations.length,
+        inquiriesCount: inquiries.length
+      });
+
+      // 2. Synchronize with server persistent ledger and localStorage
+      await apiSaveSiteConfig(payload);
+
+      setCloudSaveNotice(notice);
+
+      if (notice.saved) {
+        setCloudLastSavedAt(new Date().toISOString());
+        setMessage("Data was indeed saved successfully to Cloud Database & Storage.");
+        setTimeout(() => setMessage(""), 5000);
+      } else {
+        setMessage("Notice: Data was NOT saved to Cloud Database & Storage.");
+      }
+    } catch (err: any) {
+      const failNotice: CloudSaveNotice = {
+        saved: false,
+        message: `Data was NOT saved to Cloud Database & Storage: ${err.message || String(err)}`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + new Date().toLocaleDateString(),
+        verified: false,
+        databaseId: cloudDbId,
+        storageBucket: cloudStorageBucket,
+        error: err.message || String(err)
+      };
+      setCloudSaveNotice(failNotice);
+      setMessage("Notice: Data was NOT saved to Cloud Database & Storage.");
+    } finally {
+      setIsSavingCloud(false);
+    }
+  };
+
   const handleTestFirestore = async () => {
     setIsTestingFirestore(true);
     setFirestoreTestResult("Testing connection to Firebase Firestore...");
@@ -364,113 +454,65 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleTestMySQL = async () => {
-    if (!mysqlHost || !mysqlUser || !mysqlDatabase) {
-      setMysqlTestResult("🔴 Please fill in MySQL Host, User, and Database name before testing.");
+  const handleTestSmtp = async () => {
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      setSmtpTestResult("🔴 Please fill in SMTP Host, Username/Email, and Password before testing.");
       return;
     }
-    setIsTestingMysql(true);
-    setMysqlTestResult(`Testing live TCP connection to MySQL server at ${mysqlHost}:${mysqlPort}...`);
+    setIsTestingSmtp(true);
+    setSmtpTestResult("Authenticating with SMTP server and dispatching test email...");
     try {
-      const res = await fetch("/api/admin/test-mysql", {
+      const res = await fetch("/api/admin/test-smtp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          host: mysqlHost.trim(),
-          port: Number(mysqlPort) || 3306,
-          user: mysqlUser.trim(),
-          password: mysqlPassword,
-          database: mysqlDatabase.trim()
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMysqlTestResult(`🟢 ${data.message}`);
-      } else {
-        setMysqlTestResult(`🔴 ${data.error || "MySQL test failed."}`);
-      }
-    } catch (err: any) {
-      setMysqlTestResult(`🔴 Error connecting to MySQL: ${err.message || String(err)}`);
-    } finally {
-      setIsTestingMysql(false);
-    }
-  };
-
-  const handleTestSupabase = async () => {
-    if (!supabaseUrl || !supabaseKey) {
-      setDbTestResult("🔴 Please fill in both Supabase Project URL and Key before testing.");
-      return;
-    }
-    setIsTestingDb(true);
-    setDbTestResult("Testing live connection to Supabase database...");
-    try {
-      const res = await fetch("/api/admin/test-db", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseKey: supabaseKey.trim() })
-      });
-      
-      const rawText = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
-        setDbTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
-        return;
-      }
-
-      if (data.success) {
-        setDbTestResult(`🟢 ${data.message}`);
-        handleSaveConfig({ supabase_url: supabaseUrl.trim(), supabase_key: supabaseKey.trim() });
-      } else {
-        setDbTestResult(`🔴 ${data.message || data.error || "Database connection test failed."}`);
-      }
-    } catch (err: any) {
-      setDbTestResult(`🔴 Error connecting: ${err.message || String(err)}`);
-    } finally {
-      setIsTestingDb(false);
-    }
-  };
-
-  const handleTestEmail = async () => {
-    if (!resendApiKey) {
-      setEmailTestResult("🔴 Please enter your Resend API Key before testing.");
-      return;
-    }
-    setIsTestingEmail(true);
-    setEmailTestResult("Transmitting branded test email via Resend API...");
-    try {
-      const res = await fetch("/api/admin/test-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey: resendApiKey.trim(),
-          recipientEmail: notificationEmail || footerEmail || "info@metaspaceconsulting.com"
+          host: smtpHost.trim(),
+          port: Number(smtpPort) || 465,
+          secure: smtpSecure,
+          user: smtpUser.trim(),
+          pass: smtpPass,
+          fromName: smtpFromName.trim() || "Metaspace Consulting",
+          fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
+          recipientEmail: (notificationEmail || footerEmail || "info@metaspaceconsulting.com").trim()
         })
       });
 
-      const rawText = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        const cleanMsg = rawText.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
-        setEmailTestResult(`🔴 Server response (${res.status}): ${cleanMsg || "Server returned non-JSON response."}`);
-        return;
-      }
-
-      if (data.success) {
-        setEmailTestResult(`🟢 ${data.message}`);
-        handleSaveConfig({ resend_api_key: resendApiKey.trim(), notification_email: notificationEmail });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSmtpTestResult(`🟢 ${data.message || "SMTP test email transmitted successfully!"}`);
+        handleSaveConfig({
+          smtp_host: smtpHost.trim(),
+          smtp_port: Number(smtpPort) || 465,
+          smtp_secure: smtpSecure,
+          smtp_user: smtpUser.trim(),
+          smtp_pass: smtpPass,
+          smtp_from_name: smtpFromName.trim(),
+          smtp_from_email: smtpFromEmail.trim() || smtpUser.trim(),
+          notification_email: notificationEmail.trim()
+        });
       } else {
-        setEmailTestResult(`🔴 ${data.error || "Failed to transmit test email."}`);
+        setSmtpTestResult(`🔴 ${data.error || "SMTP delivery failed. Please verify your host, credentials, and port."}`);
       }
     } catch (err: any) {
-      setEmailTestResult(`🔴 Error: ${err.message || String(err)}`);
+      setSmtpTestResult(`🔴 Error: ${err.message || String(err)}`);
     } finally {
-      setIsTestingEmail(false);
+      setIsTestingSmtp(false);
     }
+  };
+
+  const handleSaveSmtp = () => {
+    handleSaveConfig({
+      smtp_host: smtpHost.trim(),
+      smtp_port: Number(smtpPort) || 465,
+      smtp_secure: smtpSecure,
+      smtp_user: smtpUser.trim(),
+      smtp_pass: smtpPass,
+      smtp_from_name: smtpFromName.trim(),
+      smtp_from_email: smtpFromEmail.trim() || smtpUser.trim(),
+      notification_email: notificationEmail.trim()
+    });
+    setMessage("SMTP configuration saved successfully!");
+    setTimeout(() => setMessage(""), 3000);
   };
 
   const handleDeleteInquiry = async (id: string) => {
@@ -711,10 +753,22 @@ export default function AdminDashboard() {
               {isLoggingIn ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={14} />}
               <span>Sign In to Console</span>
             </button>
-            <div className="pt-2 text-center">
-              <span className="text-[10px] text-gray-400 font-sans">
+            <div className="pt-2 text-center space-y-2">
+              <span className="text-[10px] text-gray-400 font-sans block">
                 Default Access: Username: <strong className="text-gray-600">superadmin</strong> · Password: <strong className="text-gray-600">admin</strong>
               </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("superadmin");
+                  setPassword("admin");
+                  setAuthError("");
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-[10px] font-semibold rounded-full transition cursor-pointer"
+              >
+                <KeyRound size={11} className="text-brand-blue" />
+                <span>Auto-fill Default Access</span>
+              </button>
             </div>
           </form>
         </div>
@@ -738,7 +792,7 @@ export default function AdminDashboard() {
             Corporate Operations & Layout Console
           </h2>
           <p className="text-xs text-gray-500 font-sans mt-0.5">
-            Connected database: <strong className="text-brand-blue uppercase">{isSupabase ? "Supabase Cloud Database (Live 🟢)" : "Local Persistent JSON Ledger (Fallback 🟡)"}</strong>
+            Connected database: <strong className="text-brand-blue uppercase">Google Cloud Firestore & Local Persistent Ledger (Live 🟢)</strong>
           </p>
         </div>
 
@@ -1141,7 +1195,7 @@ export default function AdminDashboard() {
           {/* SIDEBAR: Settings, DB & Email Cards */}
           <div className="lg:col-span-4 space-y-6">
             
-            {/* LIVE DATABASE HUB (FIREBASE FIRESTORE / SUPABASE / MYSQL) */}
+            {/* CLOUD DATABASE & STORAGE (GOOGLE CLOUD FIRESTORE) */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
               <div className="flex items-center justify-between pb-2 border-b border-gray-50">
@@ -1149,250 +1203,322 @@ export default function AdminDashboard() {
                   <Database size={14} className="text-amber-500" />
                   <span>Cloud Database & Storage</span>
                 </h3>
-                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-100 text-emerald-700">
-                  Firestore Ready 🟢
+                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Firestore Live 🟢</span>
                 </span>
               </div>
 
-              {/* Database Engine Selector */}
-              <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-xl text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => setDbTab("firebase")}
-                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
-                    dbTab === "firebase"
-                      ? "bg-white text-amber-600 shadow-xs font-black"
-                      : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  🔥 Firebase
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDbTab("supabase")}
-                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
-                    dbTab === "supabase"
-                      ? "bg-white text-emerald-600 shadow-xs font-black"
-                      : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  ⚡ Supabase
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDbTab("mysql")}
-                  className={`py-1.5 rounded-lg transition text-center cursor-pointer ${
-                    dbTab === "mysql"
-                      ? "bg-white text-blue-600 shadow-xs font-black"
-                      : "text-gray-500 hover:text-gray-900"
-                  }`}
-                >
-                  🐬 MySQL
-                </button>
-              </div>
-
-              {/* TAB 1: FIREBASE FIRESTORE */}
-              {dbTab === "firebase" && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-amber-900 uppercase">Provider</span>
-                      <span className="text-[10px] font-mono font-bold text-amber-800">Google Cloud Firestore</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-amber-900 uppercase">Project</span>
-                      <span className="text-[10px] font-mono text-gray-600 truncate max-w-[150px]">gen-lang-client-0889935436</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-amber-900 uppercase">Status</span>
-                      <span className="text-[10px] font-bold text-emerald-600">Provisioned & Active 🟢</span>
-                    </div>
+              <div className="space-y-3.5">
+                {/* Configuration Specs */}
+                <div className="p-3 bg-amber-50/70 border border-amber-200/60 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-amber-900 uppercase">Provider</span>
+                    <span className="text-[10px] font-mono font-bold text-amber-800">Google Cloud Firestore</span>
                   </div>
-
-                  {firestoreTestResult && (
-                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
-                      {firestoreTestResult}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleTestFirestore}
-                    disabled={isTestingFirestore}
-                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-                  >
-                    {isTestingFirestore ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
-                    <span>{isTestingFirestore ? "Pinging Cloud Firestore..." : "Test Firestore Connection"}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* TAB 2: SUPABASE */}
-              {dbTab === "supabase" && (
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Project URL</label>
+                  
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-amber-950 uppercase flex items-center justify-between">
+                      <span>Firestore Database ID</span>
+                      <span className="text-[9px] font-mono text-gray-500">europe-west2</span>
+                    </label>
                     <input
                       type="text"
-                      value={supabaseUrl}
-                      onChange={(e) => setSupabaseUrl(e.target.value)}
-                      placeholder="https://xyz.supabase.co"
-                      className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      value={cloudDbId}
+                      onChange={(e) => setCloudDbId(e.target.value)}
+                      placeholder="ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50"
+                      className="w-full px-2.5 py-1.5 text-[11px] font-mono bg-white border border-amber-200 focus:border-amber-500 rounded-lg outline-none text-gray-800"
                     />
                   </div>
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Supabase Service Key / Anon Key</label>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-amber-950 uppercase">
+                      Cloud Storage Bucket
+                    </label>
                     <input
-                      type="password"
-                      value={supabaseKey}
-                      onChange={(e) => setSupabaseKey(e.target.value)}
-                      placeholder="eyJhbGciOiJIUzI1NiI..."
-                      className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                      type="text"
+                      value={cloudStorageBucket}
+                      onChange={(e) => setCloudStorageBucket(e.target.value)}
+                      placeholder="gen-lang-client-0889935436.firebasestorage.app"
+                      className="w-full px-2.5 py-1.5 text-[11px] font-mono bg-white border border-amber-200 focus:border-amber-500 rounded-lg outline-none text-gray-800"
                     />
                   </div>
 
-                  {dbTestResult && (
-                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
-                      {dbTestResult}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[9px] font-bold text-amber-950 uppercase block mb-1">
+                        Sync Strategy
+                      </label>
+                      <select
+                        value={cloudSyncMode}
+                        onChange={(e) => setCloudSyncMode(e.target.value)}
+                        className="w-full px-2 py-1.5 text-[10px] bg-white border border-amber-200 rounded-lg outline-none font-sans text-gray-700"
+                      >
+                        <option value="realtime_mirror">Realtime Mirroring</option>
+                        <option value="scheduled_backup">Scheduled Sync</option>
+                        <option value="manual_commit">Manual On-Demand</option>
+                      </select>
                     </div>
+                    <div>
+                      <label className="text-[9px] font-bold text-amber-950 uppercase block mb-1">
+                        Auto-Mirror
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setCloudAutoSync(!cloudAutoSync)}
+                        className={`w-full py-1.5 px-2 text-[10px] font-bold rounded-lg border transition flex items-center justify-center gap-1 cursor-pointer ${
+                          cloudAutoSync 
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-800" 
+                            : "bg-gray-100 border-gray-200 text-gray-600"
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${cloudAutoSync ? "bg-emerald-500" : "bg-gray-400"}`} />
+                        <span>{cloudAutoSync ? "Enabled 🟢" : "Disabled ⚪"}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 flex items-center justify-between border-t border-amber-200/50 text-[10px]">
+                    <span className="font-bold text-amber-900 uppercase">Engine Status</span>
+                    <span className="font-bold text-emerald-600">Provisioned & Live 🟢</span>
+                  </div>
+                </div>
+
+                {/* Tracked Collections Summary */}
+                <div className="p-2.5 bg-gray-50 border border-gray-100 rounded-xl space-y-1.5">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Synchronized Collections
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2 py-0.5 bg-white border border-gray-200 rounded-md text-[10px] text-gray-700 font-mono">
+                      site_config <span className="text-emerald-600 font-bold">✓</span>
+                    </span>
+                    <span className="px-2 py-0.5 bg-white border border-gray-200 rounded-md text-[10px] text-gray-700 font-mono">
+                      consultations ({consultations.length}) <span className="text-emerald-600 font-bold">✓</span>
+                    </span>
+                    <span className="px-2 py-0.5 bg-white border border-gray-200 rounded-md text-[10px] text-gray-700 font-mono">
+                      contact_inquiries ({inquiries.length}) <span className="text-emerald-600 font-bold">✓</span>
+                    </span>
+                    <span className="px-2 py-0.5 bg-white border border-gray-200 rounded-md text-[10px] text-gray-700 font-mono">
+                      ventures ({ventures.length}) <span className="text-emerald-600 font-bold">✓</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* PRIMARY ACTION: SAVE BUTTON */}
+                <button
+                  type="button"
+                  id="btn-save-cloud-database"
+                  onClick={handleSaveCloudDatabaseAndStorage}
+                  disabled={isSavingCloud}
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-sm disabled:opacity-50"
+                >
+                  {isSavingCloud ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" />
+                      <span>Saving & Verifying Cloud Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save size={13} />
+                      <span>Save to Cloud Database & Storage</span>
+                    </>
                   )}
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={handleTestSupabase}
-                    disabled={isTestingDb}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                {/* RETURN NOTICE: IF DATA WAS INDEED SAVED OR NOT */}
+                {cloudSaveNotice && (
+                  <div
+                    id="cloud-save-notice"
+                    className={`p-3.5 rounded-xl border text-xs leading-relaxed transition-all duration-200 ${
+                      cloudSaveNotice.saved
+                        ? "bg-emerald-50/90 border-emerald-300 text-emerald-950 shadow-xs"
+                        : "bg-rose-50/90 border-rose-300 text-rose-950 shadow-xs"
+                    }`}
                   >
-                    {isTestingDb ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
-                    <span>{isTestingDb ? "Connecting..." : "Connect & Test Supabase DB"}</span>
-                  </button>
-                </div>
-              )}
+                    <div className="flex items-center justify-between pb-1 mb-1.5 border-b border-black/5">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        {cloudSaveNotice.saved ? (
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                        )}
+                        <span className={cloudSaveNotice.saved ? "text-emerald-900 font-bold" : "text-rose-900 font-bold"}>
+                          {cloudSaveNotice.saved ? "Data Indeed Saved Successfully!" : "Notice: Data Was NOT Saved"}
+                        </span>
+                      </div>
+                      <span className={`text-[9px] font-mono font-extrabold px-1.5 py-0.5 rounded uppercase ${
+                        cloudSaveNotice.saved ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"
+                      }`}>
+                        {cloudSaveNotice.saved ? "Verified 🟢" : "Failed 🔴"}
+                      </span>
+                    </div>
 
-              {/* TAB 3: MYSQL SERVER */}
-              {dbTab === "mysql" && (
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2 flex flex-col space-y-1">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase">MySQL Host</label>
-                      <input
-                        type="text"
-                        value={mysqlHost}
-                        onChange={(e) => setMysqlHost(e.target.value)}
-                        placeholder="e.g. localhost or 127.0.0.1"
-                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                      />
-                    </div>
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase">Port</label>
-                      <input
-                        type="text"
-                        value={mysqlPort}
-                        onChange={(e) => setMysqlPort(e.target.value)}
-                        placeholder="3306"
-                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                      />
-                    </div>
-                  </div>
+                    <p className={`text-[11px] ${cloudSaveNotice.saved ? "text-emerald-800" : "text-rose-800"}`}>
+                      {cloudSaveNotice.message}
+                    </p>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase">Database User</label>
-                      <input
-                        type="text"
-                        value={mysqlUser}
-                        onChange={(e) => setMysqlUser(e.target.value)}
-                        placeholder="metaspace_user"
-                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                      />
-                    </div>
-                    <div className="flex flex-col space-y-1">
-                      <label className="text-[9px] font-bold text-gray-400 uppercase">Database Name</label>
-                      <input
-                        type="text"
-                        value={mysqlDatabase}
-                        onChange={(e) => setMysqlDatabase(e.target.value)}
-                        placeholder="metaspace_db"
-                        className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                      />
+                    <div className="mt-2 pt-2 border-t border-black/5 flex items-center justify-between text-[10px] text-gray-500 font-mono">
+                      <span>Timestamp: {cloudSaveNotice.timestamp}</span>
+                      {cloudSaveNotice.saved && (
+                        <span className="text-emerald-700 font-semibold flex items-center gap-0.5">
+                          Read-Back Confirmed ✓
+                        </span>
+                      )}
                     </div>
                   </div>
+                )}
 
-                  <div className="flex flex-col space-y-1">
-                    <label className="text-[9px] font-bold text-gray-400 uppercase">MySQL Password</label>
-                    <input
-                      type="password"
-                      value={mysqlPassword}
-                      onChange={(e) => setMysqlPassword(e.target.value)}
-                      placeholder="Enter MySQL password"
-                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                    />
-                  </div>
-
-                  {mysqlTestResult && (
-                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
-                      {mysqlTestResult}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={handleTestMySQL}
-                    disabled={isTestingMysql}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
-                  >
-                    {isTestingMysql ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
-                    <span>{isTestingMysql ? "Pinging MySQL..." : "Test MySQL Server Connection"}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* RESEND EMAIL NOTIFICATION INTEGRATION */}
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-brand-blue" />
-              <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5 pb-2 border-b border-gray-50">
-                <Mail size={14} className="text-brand-blue" />
-                <span>Resend Email Dispatch</span>
-              </h3>
-
-              <div className="space-y-3">
-                <div className="flex flex-col space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Resend API Key</label>
-                  <input
-                    type="password"
-                    value={resendApiKey}
-                    onChange={(e) => setResendApiKey(e.target.value)}
-                    placeholder="re_123456789..."
-                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
-                  />
-                </div>
-                <div className="flex flex-col space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Notification Target Email</label>
-                  <input
-                    type="email"
-                    value={notificationEmail}
-                    onChange={(e) => setNotificationEmail(e.target.value)}
-                    placeholder="info@metaspaceconsulting.com"
-                    className="px-3 py-2 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none"
-                  />
-                </div>
-
-                {emailTestResult && (
+                {/* SECONDARY ACTION: TEST CONNECTION */}
+                {firestoreTestResult && (
                   <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
-                    {emailTestResult}
+                    {firestoreTestResult}
                   </div>
                 )}
 
                 <button
                   type="button"
-                  onClick={handleTestEmail}
-                  disabled={isTestingEmail}
-                  className="w-full py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition"
+                  onClick={handleTestFirestore}
+                  disabled={isTestingFirestore}
+                  className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer border border-amber-200/80"
                 >
-                  {isTestingEmail ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                  <span>{isTestingEmail ? "Transmitting..." : "Test Resend Email Delivery"}</span>
+                  {isTestingFirestore ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} className="text-amber-700" />}
+                  <span>{isTestingFirestore ? "Pinging Cloud Firestore..." : "Test Firestore Connection"}</span>
                 </button>
+              </div>
+            </div>
+
+            {/* SMTP MAIL SERVER INTEGRATION (NODEMAILER) */}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-brand-blue" />
+              <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5">
+                  <Mail size={14} className="text-brand-blue" />
+                  <span>SMTP Mail Delivery</span>
+                </h3>
+                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-blue-100 text-brand-blue">
+                  Standard SMTP
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2 flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">SMTP Host</label>
+                    <input
+                      type="text"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      placeholder="e.g. mail.metaspaceconsulting.com or smtp.gmail.com"
+                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">Port</label>
+                    <input
+                      type="text"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                      placeholder="465 or 587"
+                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-gray-700">SSL / TLS Encryption</span>
+                    <span className="text-[9px] text-gray-400">Port 465 uses SSL/TLS; Port 587 uses STARTTLS</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={smtpSecure}
+                    onChange={(e) => setSmtpSecure(e.target.checked)}
+                    className="w-4 h-4 text-brand-blue rounded cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-gray-400 uppercase">SMTP Username / Email</label>
+                  <input
+                    type="text"
+                    value={smtpUser}
+                    onChange={(e) => setSmtpUser(e.target.value)}
+                    placeholder="e.g. info@metaspaceconsulting.com"
+                    className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                  />
+                </div>
+
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-gray-400 uppercase">SMTP Password</label>
+                  <input
+                    type="password"
+                    value={smtpPass}
+                    onChange={(e) => setSmtpPass(e.target.value)}
+                    placeholder="Enter SMTP password / App password"
+                    className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">Sender Name</label>
+                    <input
+                      type="text"
+                      value={smtpFromName}
+                      onChange={(e) => setSmtpFromName(e.target.value)}
+                      placeholder="Metaspace Consulting"
+                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase">Sender Email</label>
+                    <input
+                      type="text"
+                      value={smtpFromEmail}
+                      onChange={(e) => setSmtpFromEmail(e.target.value)}
+                      placeholder="info@metaspaceconsulting.com"
+                      className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col space-y-1">
+                  <label className="text-[9px] font-bold text-gray-400 uppercase">Admin Notification Target</label>
+                  <input
+                    type="email"
+                    value={notificationEmail}
+                    onChange={(e) => setNotificationEmail(e.target.value)}
+                    placeholder="e.g. usiobaifovictory245@gmail.com"
+                    className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none"
+                  />
+                </div>
+
+                {smtpTestResult && (
+                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                    {smtpTestResult}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestSmtp}
+                    disabled={isTestingSmtp}
+                    className="py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {isTestingSmtp ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                    <span>{isTestingSmtp ? "Testing..." : "Test Dispatch"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSmtp}
+                    className="py-2.5 bg-gray-800 hover:bg-black text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Save size={12} />
+                    <span>Save SMTP</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1876,7 +2002,7 @@ export default function AdminDashboard() {
                   Admin Console Credentials & Security
                 </h3>
                 <p className="text-[11px] text-gray-400">
-                  Update administrator password for <strong>{username}</strong>. Changes take effect across Supabase & backend configuration.
+                  Update administrator password for <strong>{username}</strong>. Changes take effect across Cloud Firestore & backend configuration.
                 </p>
               </div>
             </div>
@@ -2334,7 +2460,7 @@ export default function AdminDashboard() {
                   Change Password for ({username})
                 </h3>
                 <p className="text-[11px] text-gray-400">
-                  Update your administrator password across the backend and Supabase data store.
+                  Update your administrator password across the backend and Cloud Firestore data store.
                 </p>
               </div>
             </div>

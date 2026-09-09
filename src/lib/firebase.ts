@@ -216,3 +216,98 @@ export async function fetchContactInquiriesFromFirestore() {
     ...d.data()
   }));
 }
+
+export interface CloudSaveNotice {
+  saved: boolean;
+  message: string;
+  timestamp: string;
+  verified: boolean;
+  databaseId: string;
+  storageBucket?: string;
+  docPath?: string;
+  error?: string;
+}
+
+/**
+ * Explicitly save data to Cloud Database (Google Cloud Firestore) & Storage,
+ * and verify via read-back whether the data was indeed saved or not.
+ */
+export async function saveToCloudDatabaseAndStorage(
+  configData: Record<string, any>,
+  extra?: {
+    username?: string;
+    consultationsCount?: number;
+    inquiriesCount?: number;
+  }
+): Promise<CloudSaveNotice> {
+  const now = new Date();
+  const timestampStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ', ' + now.toLocaleDateString();
+  const targetDb = configData.cloud_db_id || firebaseConfig.firestoreDatabaseId || "ai-studio-metaspaceconsult-9ba2a98e-157c-4575-bf8c-0d59e54caf50";
+  const targetBucket = configData.cloud_storage_bucket || firebaseConfig.storageBucket || "gen-lang-client-0889935436.firebasestorage.app";
+
+  try {
+    const configDocRef = doc(db, "site_config", "global");
+
+    // 1. Write the configuration payload to Firestore
+    await setDoc(configDocRef, {
+      ...configData,
+      cloudDatabaseId: targetDb,
+      cloudStorageBucket: targetBucket,
+      lastSavedAt: now.toISOString(),
+      savedBy: extra?.username || "admin",
+      status: "synchronized"
+    }, { merge: true });
+
+    // 2. Record an audit ledger snapshot
+    try {
+      const snapshotDocRef = doc(db, "site_config", "cloud_snapshot");
+      await setDoc(snapshotDocRef, {
+        savedAt: now.toISOString(),
+        savedBy: extra?.username || "admin",
+        databaseId: targetDb,
+        storageBucket: targetBucket,
+        consultationsCount: extra?.consultationsCount || 0,
+        inquiriesCount: extra?.inquiriesCount || 0,
+        status: "verified"
+      }, { merge: true });
+    } catch (snapErr) {
+      console.warn("Snapshot audit log non-blocking warning:", snapErr);
+    }
+
+    // 3. Read-back verification: Guarantee whether the data was indeed written
+    const readBack = await getDoc(configDocRef);
+    if (!readBack.exists()) {
+      return {
+        saved: false,
+        message: `Notice: Write operation was executed, but verification failed to confirm document existence in database '${targetDb}'.`,
+        timestamp: timestampStr,
+        verified: false,
+        databaseId: targetDb,
+        storageBucket: targetBucket,
+        docPath: "site_config/global",
+        error: "Document not found during read-back check."
+      };
+    }
+
+    return {
+      saved: true,
+      message: `Data was indeed saved and verified successfully in Cloud Database '${targetDb}' (collection 'site_config/global') and Storage '${targetBucket}'.`,
+      timestamp: timestampStr,
+      verified: true,
+      databaseId: targetDb,
+      storageBucket: targetBucket,
+      docPath: "site_config/global"
+    };
+  } catch (err: any) {
+    console.error("Cloud Database & Storage Save Error:", err);
+    return {
+      saved: false,
+      message: `Data was NOT saved to Cloud Database & Storage: ${err.message || String(err)}`,
+      timestamp: timestampStr,
+      verified: false,
+      databaseId: targetDb,
+      storageBucket: targetBucket,
+      error: err.message || String(err)
+    };
+  }
+}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Mail, Phone, MapPin, Linkedin, Twitter, Facebook, Instagram, ShieldCheck } from "lucide-react";
+import { Mail, Phone, MapPin, Linkedin, Twitter, Facebook, Instagram } from "lucide-react";
 import { TabType, Venture } from "../types";
 import MetaspaceLogo from "./MetaspaceLogo";
 
@@ -209,11 +209,6 @@ export default function Footer({
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-gray-500 font-sans">
           <p>© {currentYear} Metaspace Consulting Limited. All rights reserved.</p>
           <div className="flex items-center space-x-6">
-            <button onClick={() => setCurrentTab("admin")} className="hover:text-gray-400 flex items-center gap-1">
-              <ShieldCheck size={12} />
-              <span>System Records Ledger</span>
-            </button>
-            <span className="text-gray-700">|</span>
             <button className="hover:text-gray-400">Privacy Policy</button>
             <span className="text-gray-700">|</span>
             <button className="hover:text-gray-400">Terms of Service</button>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import localLogoImg from "../assets/logo.png";
 
 interface MetaspaceLogoProps {
   className?: string;
@@ -17,11 +18,10 @@ export default function MetaspaceLogo({
 }: MetaspaceLogoProps) {
   // Ordered fallback candidate URLs
   const candidateUrls: string[] = [
-    ...(logoUrl && logoUrl.trim() !== "" ? [logoUrl.trim()] : []),
+    ...(logoUrl && logoUrl.trim() !== "" && !logoUrl.includes("placeholder") ? [logoUrl.trim()] : []),
+    localLogoImg,
     "/images.png",
-    "/logo.png",
-    "images.png",
-    "logo.png"
+    "/logo.png"
   ];
 
   const [candidateIndex, setCandidateIndex] = useState(0);

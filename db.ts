@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Define TS interfaces for our store
 import { Venture, ServiceOffer, InsightPost, Consultation, ContactInquiry, ClientLogo } from "./src/types";
@@ -14,9 +13,13 @@ export interface AdminUser {
 export interface SiteConfig {
   adminPassword?: string;
   adminUsernames?: AdminUser[];
-  supabase_url?: string;
-  supabase_key?: string;
-  resend_api_key?: string;
+  smtp_host?: string;
+  smtp_port?: number | string;
+  smtp_secure?: boolean;
+  smtp_user?: string;
+  smtp_pass?: string;
+  smtp_from_name?: string;
+  smtp_from_email?: string;
   notification_email?: string;
   logoUrl?: string; // Can be empty or base64 or custom URL
   lagosBridgeUrl?: string; // The hero image
@@ -50,116 +53,6 @@ export interface SiteConfig {
   home_hero_title_highlight_color?: string;
 }
 
-let supabaseInstance: SupabaseClient | null = null;
-
-export function getSupabaseClient(): SupabaseClient | null {
-  let url = "";
-  let key = "";
-
-  try {
-    const fileConf = inMemoryDB?.siteConfig || readLocalFile()?.siteConfig;
-    if (fileConf?.supabase_url && fileConf?.supabase_key) {
-      url = fileConf.supabase_url;
-      key = fileConf.supabase_key;
-    }
-  } catch {
-    // Ignore read error during boot
-  }
-
-  if (!url || !key) {
-    url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-    key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-  }
-
-  if (url && key) {
-    let cleanUrl = (url || "").trim();
-    if (cleanUrl && !cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-      cleanUrl = `https://${cleanUrl}`;
-    }
-    const cleanKey = (key || "").trim();
-
-    if (cleanUrl && cleanKey) {
-      if (!supabaseInstance) {
-        try {
-          supabaseInstance = createClient(cleanUrl, cleanKey);
-        } catch (e) {
-          console.error("Supabase init error:", e);
-        }
-      }
-      return supabaseInstance;
-    }
-  }
-  return null;
-}
-
-export function resetSupabaseClient(): void {
-  supabaseInstance = null;
-}
-
-export async function testSupabaseConnection(rawUrl: string, key: string): Promise<{ success: boolean; message: string }> {
-  try {
-    let url = (rawUrl || "").trim();
-    if (!url) {
-      return { success: false, message: "Supabase Project URL is empty." };
-    }
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = `https://${url}`;
-    }
-
-    const cleanKey = (key || "").trim();
-    if (!cleanKey) {
-      return { success: false, message: "Supabase Anon / Service Role Key is empty." };
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    try {
-      const restUrl = `${url.replace(/\/+$/, "")}/rest/v1/metaspace_config?select=*&limit=1`;
-      const resp = await fetch(restUrl, {
-        headers: {
-          "apikey": cleanKey,
-          "Authorization": `Bearer ${cleanKey}`
-        },
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (resp.ok) {
-        return { success: true, message: "Live connection to Supabase database verified successfully!" };
-      } else {
-        const errText = await resp.text().catch(() => "");
-        let errJson: any = {};
-        try { errJson = JSON.parse(errText); } catch {}
-        const msg = errJson.message || errJson.hint || errText || resp.statusText;
-
-        if (resp.status === 404 || msg.includes("not find") || msg.includes("relation") || msg.includes("schema cache") || msg.includes("does not exist")) {
-          return {
-            success: true,
-            message: "Connected to Supabase project successfully! (Note: Table 'metaspace_config' is not created yet; run the SQL schema setup in Supabase SQL Editor)."
-          };
-        }
-        if (resp.status === 401 || resp.status === 403) {
-          return { success: false, message: `Supabase Auth Error (${resp.status}): Invalid API Key or Permissions.` };
-        }
-        return { success: false, message: `Supabase Error (${resp.status}): ${msg || "Unable to access table."}` };
-      }
-    } catch (fetchErr: any) {
-      clearTimeout(timeoutId);
-      if (fetchErr.name === "AbortError") {
-        return { success: false, message: "Supabase connection timed out after 8 seconds. Please verify the URL." };
-      }
-      return { success: false, message: `Could not reach Supabase endpoint (${url}): ${fetchErr.message || String(fetchErr)}` };
-    }
-  } catch (err: any) {
-    return { success: false, message: `Failed to test Supabase connection: ${err.message || String(err)}` };
-  }
-}
-
-export function isUsingSupabase(): boolean {
-  return getSupabaseClient() !== null;
-}
-
 // Default Seed Data
 const DEFAULT_SITE_CONFIG: SiteConfig = {
   adminPassword: "admin", // Default password as requested
@@ -167,6 +60,14 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
     { username: "superadmin", password: "admin", isSuperadmin: true },
     { username: "admin", password: "admin", isSuperadmin: true }
   ],
+  smtp_host: "",
+  smtp_port: 465,
+  smtp_secure: true,
+  smtp_user: "",
+  smtp_pass: "",
+  smtp_from_name: "Metaspace Consulting",
+  smtp_from_email: "info@metaspaceconsulting.com",
+  notification_email: "info@metaspaceconsulting.com",
   logoUrl: "", // Default empty, falls back to Metaspace vector logo or download.jpg
   lagosBridgeUrl: "https://images.unsplash.com/photo-1599839352727-4c749b5c2253?q=80&w=1200&auto=format&fit=crop",
   home_hero_title_color: "#1727e7",
@@ -497,13 +398,9 @@ interface InFileDB {
   contactInquiries: ContactInquiry[];
 }
 
-export function isUsingMySQL(): boolean {
-  return false;
-}
-
 // Initialize DB Connection and Tables
 export async function initDatabase() {
-  console.log("Initializing database layer (Supabase / In-Memory & /tmp Fallback)...");
+  console.log("Initializing database layer (Local Persistent Ledger & In-Memory Fallback)...");
   
   try {
     const dataDir = path.join(process.cwd(), "data");
@@ -731,33 +628,6 @@ function writeLocalFile(data: InFileDB) {
 
 // API EXPORTS: Get Entire Site Config
 export async function getSiteConfig(): Promise<SiteConfig> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.from("metaspace_config").select("*");
-      if (!error && data && data.length > 0) {
-        const config: any = {};
-        for (const row of data) {
-          try {
-            const k = row.setting_key || row.content_key;
-            const v = row.setting_value !== undefined ? row.setting_value : row.content_value;
-            if (v && typeof v === "string" && (v.startsWith("{") || v.startsWith("["))) {
-              config[k] = JSON.parse(v);
-            } else {
-              config[k] = v;
-            }
-          } catch {
-            const k = row.setting_key || row.content_key;
-            config[k] = row.setting_value !== undefined ? row.setting_value : row.content_value;
-          }
-        }
-        return ensureMetagenInConfig({ ...DEFAULT_SITE_CONFIG, ...config });
-      }
-    } catch (err) {
-      console.warn("Supabase site config fetch warning:", err);
-    }
-  }
-
   // Fallback to Local JSON / Memory store
   const fileData = readLocalFile();
   return ensureMetagenInConfig({
@@ -768,10 +638,6 @@ export async function getSiteConfig(): Promise<SiteConfig> {
 
 // API EXPORTS: Update Site Config
 export async function updateSiteConfig(updates: Partial<SiteConfig>): Promise<SiteConfig> {
-  if (updates.supabase_url !== undefined || updates.supabase_key !== undefined) {
-    resetSupabaseClient();
-  }
-
   const fileData = readLocalFile();
   fileData.siteConfig = {
     ...fileData.siteConfig,
@@ -779,37 +645,11 @@ export async function updateSiteConfig(updates: Partial<SiteConfig>): Promise<Si
   };
   writeLocalFile(fileData);
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === undefined) continue;
-        const valStr = typeof value === "string" ? value : JSON.stringify(value);
-        await supabase.from("metaspace_config").upsert({ setting_key: key, setting_value: valStr }, { onConflict: "setting_key" });
-      }
-    } catch (err) {
-      console.warn("Supabase updateSiteConfig warning:", err);
-    }
-  }
-
   return getSiteConfig();
 }
 
 // API EXPORTS: Get consultations
 export async function getConsultations(): Promise<Consultation[]> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.from("metaspace_consultations").select("*").order("createdAt", { ascending: false });
-      if (!error && data) {
-        return data as Consultation[];
-      }
-    } catch (err) {
-      console.warn("Supabase getConsultations warning:", err);
-    }
-  }
-
-  // Local File Fallback
   return readLocalFile().consultations;
 }
 
@@ -818,16 +658,6 @@ export async function addConsultation(c: Consultation): Promise<Consultation> {
   const fileData = readLocalFile();
   fileData.consultations.push(c);
   writeLocalFile(fileData);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from("metaspace_consultations").insert([c]);
-    } catch (err) {
-      console.warn("Supabase addConsultation warning:", err);
-    }
-  }
-
   return c;
 }
 
@@ -839,16 +669,6 @@ export async function updateConsultationStatus(id: string, status: "pending" | "
     c.status = status;
     writeLocalFile(fileData);
   }
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from("metaspace_consultations").update({ status }).eq("id", id);
-    } catch (err) {
-      console.warn("Supabase updateConsultationStatus warning:", err);
-    }
-  }
-
   return !!c;
 }
 
@@ -861,34 +681,11 @@ export async function deleteConsultation(id: string): Promise<boolean> {
   if (deletedLocally) {
     writeLocalFile(fileData);
   }
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from("metaspace_consultations").delete().eq("id", id);
-    } catch (err) {
-      console.warn("Supabase deleteConsultation warning:", err);
-    }
-  }
-
   return deletedLocally;
 }
 
 // API EXPORTS: Get Contact Inquiries
 export async function getContactInquiries(): Promise<ContactInquiry[]> {
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase.from("metaspace_inquiries").select("*").order("createdAt", { ascending: false });
-      if (!error && data) {
-        return data as ContactInquiry[];
-      }
-    } catch (err) {
-      console.warn("Supabase getContactInquiries warning:", err);
-    }
-  }
-
-  // Local File
   return readLocalFile().contactInquiries;
 }
 
@@ -897,16 +694,6 @@ export async function addContactInquiry(inq: ContactInquiry): Promise<ContactInq
   const fileData = readLocalFile();
   fileData.contactInquiries.push(inq);
   writeLocalFile(fileData);
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from("metaspace_inquiries").insert([inq]);
-    } catch (err) {
-      console.warn("Supabase addContactInquiry warning:", err);
-    }
-  }
-
   return inq;
 }
 
@@ -919,15 +706,5 @@ export async function deleteContactInquiry(id: string): Promise<boolean> {
   if (deletedLocally) {
     writeLocalFile(fileData);
   }
-
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      await supabase.from("metaspace_inquiries").delete().eq("id", id);
-    } catch (err) {
-      console.warn("Supabase deleteContactInquiry warning:", err);
-    }
-  }
-
   return deletedLocally;
 }
