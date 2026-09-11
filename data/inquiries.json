@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "inq-g99kwtcp9",
+    "name": "Amina Bello",
+    "email": "amina@example.com",
+    "subject": "Partnership Inquiry",
+    "message": "Looking to collaborate on renewable energy transformation projects.",
+    "createdAt": "2026-09-09T22:36:37.410Z"
+  }
+]

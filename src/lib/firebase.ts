@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import { 
   getFirestore, 
+  initializeFirestore,
   doc, 
   getDoc, 
   setDoc, 
@@ -32,10 +33,68 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 
-// Initialize Firestore with custom database ID from config if present
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Firestore with custom database ID from config with experimentalForceLongPolling to avoid connection dropouts in proxied/iframe environments
+function initFirestoreInstance() {
+  try {
+    return initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+    }, firebaseConfig.firestoreDatabaseId || undefined);
+  } catch {
+    return firebaseConfig.firestoreDatabaseId 
+      ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+      : getFirestore(app);
+  }
+}
+
+export const db = initFirestoreInstance();
+
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
+  const currentUser = auth.currentUser;
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: currentUser?.uid || null,
+      email: currentUser?.email || null,
+      emailVerified: currentUser?.emailVerified || null,
+      isAnonymous: currentUser?.isAnonymous || null,
+      tenantId: currentUser?.tenantId || null,
+      providerInfo: currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.warn('Firestore Operation Notice: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export interface FirestoreTestResult {
   success: boolean;
@@ -59,7 +118,10 @@ export async function testFirestoreConnection(): Promise<FirestoreTestResult> {
   const startTime = Date.now();
   try {
     const configDocRef = doc(db, "site_config", "global");
-    const snapshot = await getDoc(configDocRef);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Firestore backend connection timed out (6s). Check network or firewall.")), 6000)
+    );
+    const snapshot = await Promise.race([getDoc(configDocRef), timeoutPromise]) as any;
     const latencyMs = Date.now() - startTime;
 
     // If site_config doesn't exist yet, seed a heartbeat check
@@ -140,6 +202,27 @@ export function subscribeSiteConfig(callback: (data: any) => void) {
   }, (err) => {
     console.warn("Firestore site_config sync warning:", err);
   });
+}
+
+/**
+ * Fetch latest Site Configuration directly from Firestore with fallback timeout
+ */
+export async function fetchSiteConfigFromFirestore(): Promise<any> {
+  try {
+    const configDocRef = doc(db, "site_config", "global");
+    const fetchPromise = getDoc(configDocRef);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Firestore connection timeout")), 2500)
+    );
+    const docSnap = await Promise.race([fetchPromise, timeoutPromise]) as any;
+    if (docSnap && typeof docSnap.exists === "function" && docSnap.exists()) {
+      return docSnap.data();
+    }
+  } catch (err: any) {
+    // Non-blocking: will seamlessly use local / server configuration
+    console.info("Firestore site_config sync: operating with fallback state.", err?.message || err);
+  }
+  return null;
 }
 
 /**

@@ -82,12 +82,13 @@ export default function GeminiAssistant() {
     }
   };
 
-  // Clamping function to keep button inside viewport
+  // Clamping function to keep button inside viewport (desktop mouse drag only)
   const setClampedCoords = (x: number, y: number) => {
-    const minX = 10;
-    const minY = 10;
-    const maxX = window.innerWidth - 65; // Button width is 56px (14rem)
-    const maxY = window.innerHeight - 65; // Button height is 56px (14rem)
+    if (typeof window === "undefined") return;
+    const minX = 16;
+    const minY = 16;
+    const maxX = window.innerWidth - 72; // Button width is 56px
+    const maxY = window.innerHeight - 72;
     setCoords({
       x: Math.max(minX, Math.min(x, maxX)),
       y: Math.max(minY, Math.min(y, maxY)),
@@ -95,7 +96,8 @@ export default function GeminiAssistant() {
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return; // Only left click drags
+    // Only drag on desktop (screen >= 640px)
+    if (e.button !== 0 || window.innerWidth < 640) return;
 
     const rect = e.currentTarget.getBoundingClientRect();
     buttonStart.current = { x: rect.left, y: rect.top };
@@ -106,7 +108,7 @@ export default function GeminiAssistant() {
       const dx = moveEvent.clientX - dragStart.current.x;
       const dy = moveEvent.clientY - dragStart.current.y;
 
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      if (Math.abs(dx) > 12 || Math.abs(dy) > 12) {
         isDragging.current = true;
       }
 
@@ -118,46 +120,20 @@ export default function GeminiAssistant() {
     const handleMouseUp = () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      setTimeout(() => {
+        isDragging.current = false;
+      }, 50);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLButtonElement>) => {
-    const touch = e.touches[0];
-    const rect = e.currentTarget.getBoundingClientRect();
-    buttonStart.current = { x: rect.left, y: rect.top };
-    dragStart.current = { x: touch.clientX, y: touch.clientY };
-    isDragging.current = false;
-
-    const handleTouchMove = (moveEvent: TouchEvent) => {
-      const touchMove = moveEvent.touches[0];
-      const dx = touchMove.clientX - dragStart.current.x;
-      const dy = touchMove.clientY - dragStart.current.y;
-
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        isDragging.current = true;
-      }
-
-      if (isDragging.current) {
-        setClampedCoords(buttonStart.current.x + dx, buttonStart.current.y + dy);
-      }
-    };
-
-    const handleTouchEnd = () => {
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
-    };
-
-    document.addEventListener("touchmove", handleTouchMove, { passive: true });
-    document.addEventListener("touchend", handleTouchEnd);
-  };
-
   const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!isDragging.current) {
-      setIsOpen(!isOpen);
+      setIsOpen(prev => !prev);
     }
   };
 
@@ -211,20 +187,31 @@ export default function GeminiAssistant() {
     return <p className="whitespace-pre-wrap">{elements.length > 0 ? elements : text}</p>;
   };
 
-  const style: React.CSSProperties = coords
-    ? { left: `${coords.x}px`, top: `${coords.y}px`, bottom: "auto", right: "auto", position: "fixed" }
-    : { position: "fixed", bottom: "1.5rem", right: "1.5rem" };
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
 
-  const isTopHalf = coords ? coords.y < 350 : false;
+  const buttonStyle: React.CSSProperties = (!isMobile && coords)
+    ? { left: `${coords.x}px`, top: `${coords.y}px`, position: "fixed" }
+    : { position: "fixed", bottom: "1.25rem", right: "1.25rem" };
+
+  const isDesktopTopHalf = !isMobile && coords ? coords.y < 380 : false;
+
+  const chatDesktopStyle: React.CSSProperties = (!isMobile && coords)
+    ? {
+        position: "fixed",
+        left: `${Math.max(16, Math.min(coords.x - 320, window.innerWidth - 400))}px`,
+        top: isDesktopTopHalf ? `${coords.y + 68}px` : "auto",
+        bottom: !isDesktopTopHalf ? `${window.innerHeight - coords.y + 12}px` : "auto",
+      }
+    : {};
 
   return (
-    <div
-      style={style}
-      className={`z-50 flex ${isTopHalf ? "flex-col-reverse" : "flex-col"} items-end`}
-    >
+    <>
       {/* Active Chat Window */}
       {isOpen && (
-        <div className={`${isTopHalf ? "mt-4" : "mb-4"} w-96 max-w-[calc(100vw-2rem)] h-[550px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden animate-in fade-in duration-200`}>
+        <div
+          style={chatDesktopStyle}
+          className="fixed inset-x-3.5 bottom-20 sm:inset-auto sm:bottom-24 sm:right-6 w-auto sm:w-96 max-h-[calc(100dvh-5.5rem)] sm:h-[550px] h-[520px] bg-white rounded-2xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-200"
+        >
           {/* Chat Header */}
           <div className="bg-gradient-to-r from-blue-900 via-blue-950 to-red-950 p-4 text-white flex items-center justify-between shadow-md select-none">
             <div className="flex items-center space-x-2">
@@ -346,10 +333,10 @@ export default function GeminiAssistant() {
 
       {/* Floating Sparkle Toggle Button */}
       <button
+        style={buttonStyle}
         onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
         onClick={handleButtonClick}
-        className="w-14 h-14 rounded-full bg-gradient-to-r from-blue-900 via-blue-950 to-red-950 hover:from-blue-950 hover:to-red-900 text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 border-2 border-white/25 group relative cursor-move select-none"
+        className="z-50 w-14 h-14 rounded-full bg-gradient-to-r from-blue-900 via-blue-950 to-red-950 hover:from-blue-950 hover:to-red-900 text-white flex items-center justify-center shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 border-2 border-white/25 group select-none sm:cursor-move cursor-pointer"
         aria-label="Companion Assistant"
       >
         {isOpen ? (
@@ -364,6 +351,6 @@ export default function GeminiAssistant() {
           </div>
         )}
       </button>
-    </div>
+    </>
   );
 }

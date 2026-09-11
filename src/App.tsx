@@ -64,60 +64,65 @@ export default function App() {
   const [footerQuickLinks, setFooterQuickLinks] = useState<{ label: string; tab: string }[]>([]);
   const [footerVenturesLinks, setFooterVenturesLinks] = useState<{ label: string; tab: string }[]>([]);
 
+  const applySiteConfig = (d: any) => {
+    if (!d) return;
+    if (d.ventures && Array.isArray(d.ventures)) {
+      let loaded = d.ventures;
+      const hasMetagen = loaded.some((v: Venture) => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
+      if (!hasMetagen) {
+        loaded = [VENTURES_DATA[0], ...loaded];
+      } else {
+        loaded = loaded.map((v: Venture) => {
+          if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
+            return VENTURES_DATA[0];
+          }
+          return v;
+        });
+      }
+      setVentures(loaded);
+    }
+    if (d.services) setServices(d.services);
+    if (d.teamMembers) setTeamMembers(d.teamMembers);
+    if (d.insights) setInsights(d.insights);
+    if (d.clientLogos && Array.isArray(d.clientLogos)) {
+      setClientLogos(d.clientLogos);
+    } else if (d.client_logos && Array.isArray(d.client_logos)) {
+      setClientLogos(d.client_logos);
+    }
+    if (d.logoUrl !== undefined) setLogoUrl(d.logoUrl);
+    if (d.lagosBridgeUrl !== undefined) setLagosBridgeUrl(d.lagosBridgeUrl);
+
+    if (d.home_hero_title !== undefined) setHomeHeroTitle(d.home_hero_title);
+    if (d.home_hero_title_color !== undefined) setHomeHeroTitleColor(d.home_hero_title_color);
+    if (d.home_hero_title_highlight_color !== undefined) setHomeHeroTitleHighlightColor(d.home_hero_title_highlight_color);
+    if (d.home_hero_subtitle !== undefined) setHomeHeroSubtitle(d.home_hero_subtitle);
+    if (d.home_hero_desc !== undefined) setHomeHeroDesc(d.home_hero_desc);
+    if (d.about_hero_title !== undefined) setAboutHeroTitle(d.about_hero_title);
+    if (d.about_hero_desc !== undefined) setAboutHeroDesc(d.about_hero_desc);
+    if (d.about_mission_title !== undefined) setAboutMissionTitle(d.about_mission_title);
+    if (d.about_mission_text !== undefined) setAboutMissionText(d.about_mission_text);
+    if (d.what_we_do_title !== undefined) setWhatWeDoTitle(d.what_we_do_title);
+    if (d.what_we_do_desc !== undefined) setWhatWeDoDesc(d.what_we_do_desc);
+
+    if (d.whatsapp_number !== undefined) setWhatsappNumber(d.whatsapp_number);
+    if (d.footer_tagline !== undefined) setFooterTagline(d.footer_tagline);
+    if (d.footer_desc !== undefined) setFooterDesc(d.footer_desc);
+    if (d.footer_email !== undefined) setFooterEmail(d.footer_email);
+    if (d.footer_phone !== undefined) setFooterPhone(d.footer_phone);
+    if (d.footer_address !== undefined) setFooterAddress(d.footer_address);
+    if (d.footer_linkedin !== undefined) setFooterLinkedin(d.footer_linkedin);
+    if (d.footer_twitter !== undefined) setFooterTwitter(d.footer_twitter);
+    if (d.footer_facebook !== undefined) setFooterFacebook(d.footer_facebook);
+    if (d.footer_instagram !== undefined) setFooterInstagram(d.footer_instagram);
+    if (d.footer_quick_links !== undefined) setFooterQuickLinks(d.footer_quick_links);
+    if (d.footer_ventures_links !== undefined) setFooterVenturesLinks(d.footer_ventures_links);
+  };
+
   const loadSiteConfig = async () => {
     try {
       const d = await apiFetchSiteConfig();
       if (d) {
-        if (d.ventures && Array.isArray(d.ventures)) {
-          let loaded = d.ventures;
-          const hasMetagen = loaded.some((v: Venture) => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
-          if (!hasMetagen) {
-            loaded = [VENTURES_DATA[0], ...loaded];
-          } else {
-            loaded = loaded.map((v: Venture) => {
-              if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
-                return VENTURES_DATA[0];
-              }
-              return v;
-            });
-          }
-          setVentures(loaded);
-        }
-        if (d.services) setServices(d.services);
-        if (d.teamMembers) setTeamMembers(d.teamMembers);
-        if (d.insights) setInsights(d.insights);
-        if (d.clientLogos && Array.isArray(d.clientLogos) && d.clientLogos.length > 0) {
-          setClientLogos(d.clientLogos);
-        } else if (d.client_logos && Array.isArray(d.client_logos) && d.client_logos.length > 0) {
-          setClientLogos(d.client_logos);
-        }
-        if (d.logoUrl !== undefined) setLogoUrl(d.logoUrl);
-        if (d.lagosBridgeUrl) setLagosBridgeUrl(d.lagosBridgeUrl);
-
-        if (d.home_hero_title) setHomeHeroTitle(d.home_hero_title);
-        if (d.home_hero_title_color) setHomeHeroTitleColor(d.home_hero_title_color);
-        if (d.home_hero_title_highlight_color) setHomeHeroTitleHighlightColor(d.home_hero_title_highlight_color);
-        if (d.home_hero_subtitle) setHomeHeroSubtitle(d.home_hero_subtitle);
-        if (d.home_hero_desc) setHomeHeroDesc(d.home_hero_desc);
-        if (d.about_hero_title) setAboutHeroTitle(d.about_hero_title);
-        if (d.about_hero_desc) setAboutHeroDesc(d.about_hero_desc);
-        if (d.about_mission_title) setAboutMissionTitle(d.about_mission_title);
-        if (d.about_mission_text) setAboutMissionText(d.about_mission_text);
-        if (d.what_we_do_title) setWhatWeDoTitle(d.what_we_do_title);
-        if (d.what_we_do_desc) setWhatWeDoDesc(d.what_we_do_desc);
-
-        if (d.whatsapp_number) setWhatsappNumber(d.whatsapp_number);
-        if (d.footer_tagline) setFooterTagline(d.footer_tagline);
-        if (d.footer_desc) setFooterDesc(d.footer_desc);
-        if (d.footer_email) setFooterEmail(d.footer_email);
-        if (d.footer_phone) setFooterPhone(d.footer_phone);
-        if (d.footer_address) setFooterAddress(d.footer_address);
-        if (d.footer_linkedin) setFooterLinkedin(d.footer_linkedin);
-        if (d.footer_twitter) setFooterTwitter(d.footer_twitter);
-        if (d.footer_facebook) setFooterFacebook(d.footer_facebook);
-        if (d.footer_instagram) setFooterInstagram(d.footer_instagram);
-        if (d.footer_quick_links) setFooterQuickLinks(d.footer_quick_links);
-        if (d.footer_ventures_links) setFooterVenturesLinks(d.footer_ventures_links);
+        applySiteConfig(d);
       }
     } catch (err) {
       console.error("Failed to load site configurations", err);
@@ -126,6 +131,17 @@ export default function App() {
 
   useEffect(() => {
     loadSiteConfig();
+    const handleConfigUpdated = (e: any) => {
+      if (e?.detail) {
+        applySiteConfig(e.detail);
+      } else {
+        loadSiteConfig();
+      }
+    };
+    window.addEventListener("metaspace_config_updated", handleConfigUpdated);
+    return () => {
+      window.removeEventListener("metaspace_config_updated", handleConfigUpdated);
+    };
   }, []);
 
   const handleTabChange = (tab: TabType) => {
@@ -256,14 +272,21 @@ export default function App() {
         {currentTab === "home" && (
           <div className="space-y-16 animate-in fade-in duration-300">
             
-            {/* HERO SECTION - Lekki-Ikoyi Link Bridge shown on right */}
-            <section className="relative overflow-hidden bg-gradient-to-br from-white via-gray-50/50 to-blue-50/20 py-12 md:py-24 lg:py-32 min-h-[85vh] md:min-h-[90vh] flex items-center w-full border-b border-gray-100">
-              <div className="absolute inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none" />
+            {/* HERO SECTION - Blended seamlessly into page background with checkered grid and right-to-left flowing image */}
+            <section className="relative overflow-hidden bg-[#FCFDFE] py-12 md:py-20 lg:py-28 min-h-[85vh] md:min-h-[90vh] flex items-center w-full">
+              {/* Light checkered grid lines from the left fading with transparency to the right */}
+              <div 
+                className="absolute inset-0 bg-grid-pattern pointer-events-none" 
+                style={{
+                  maskImage: "linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 35%, rgba(0,0,0,0.25) 65%, transparent 88%)",
+                  WebkitMaskImage: "linear-gradient(to right, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.6) 35%, rgba(0,0,0,0.25) 65%, transparent 88%)",
+                }}
+              />
               <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-12 relative z-10">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
                   
                   {/* Left Hero Text Content */}
-                  <div className="lg:col-span-7 space-y-6 text-left">
+                  <div className="lg:col-span-6 space-y-6 text-left relative z-20">
                     <div className="inline-flex items-center space-x-2 bg-red-50 px-3.5 py-1.5 rounded-full border border-red-100 shadow-sm">
                       <span className="w-2.5 h-2.5 bg-brand-crimson rounded-full animate-pulse" />
                       <span className="font-display font-bold text-[10px] sm:text-xs uppercase tracking-widest text-brand-crimson">
@@ -273,7 +296,7 @@ export default function App() {
 
                     <h1 
                       style={{ color: homeHeroTitleColor }}
-                      className="font-display font-black text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tight leading-[1.03]"
+                      className="font-display font-black text-4xl sm:text-6xl md:text-7xl lg:text-7xl xl:text-8xl tracking-tight leading-[1.03]"
                     >
                       {homeHeroTitle.includes("Africa") ? (
                         <>
@@ -284,7 +307,7 @@ export default function App() {
                       ) : homeHeroTitle}
                     </h1>
 
-                    <p className="font-sans text-base sm:text-lg text-gray-600 max-w-2xl leading-relaxed">
+                    <p className="font-sans text-base sm:text-lg text-gray-600 max-w-xl leading-relaxed">
                       {homeHeroDesc}
                     </p>
 
@@ -306,16 +329,25 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Right Hero Image Frame (Lagos Lekki Bridge) */}
-                  <div className="lg:col-span-5 relative">
-                    <div className="absolute -inset-2 bg-gradient-to-tr from-brand-crimson via-purple-600 to-brand-blue rounded-3xl blur-lg opacity-30 animate-pulse" />
-                    <div className="relative overflow-hidden rounded-3xl border border-gray-100 shadow-2xl h-[380px] sm:h-[520px] w-full">
+                  {/* Right Hero Image Frame - Flows from right to left, increasing reach to the left before the text */}
+                  <div className="lg:col-span-6 relative lg:-ml-10 xl:-ml-16 lg:-mr-6 xl:-mr-12">
+                    {/* Soft ambient illumination blending into page background */}
+                    <div className="absolute -inset-4 bg-gradient-to-l from-brand-crimson/5 via-blue-50/25 to-transparent rounded-3xl blur-2xl pointer-events-none" />
+                    <div 
+                      className="relative overflow-hidden h-[400px] sm:h-[500px] lg:h-[580px] w-full"
+                      style={{
+                        maskImage: "linear-gradient(to left, rgba(0,0,0,1) 84%, rgba(0,0,0,0.85) 91%, rgba(0,0,0,0.45) 96%, rgba(0,0,0,0.12) 99%, transparent 100%), linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 2%, rgba(0,0,0,1) 98%, transparent 100%)",
+                        WebkitMaskImage: "linear-gradient(to left, rgba(0,0,0,1) 84%, rgba(0,0,0,0.85) 91%, rgba(0,0,0,0.45) 96%, rgba(0,0,0,0.12) 99%, transparent 100%), linear-gradient(to bottom, transparent 0%, rgba(0,0,0,1) 2%, rgba(0,0,0,1) 98%, transparent 100%)",
+                        maskComposite: "intersect",
+                        WebkitMaskComposite: "source-in",
+                      }}
+                    >
                       {lagosBridgeUrl && lagosBridgeUrl.trim() !== "" ? (
                         <img 
                           src={lagosBridgeUrl} 
                           alt="Metaspace Consulting Technology Headquarters"
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000"
+                          className="w-full h-full object-cover object-center scale-105 hover:scale-110 transition duration-1000 opacity-100"
                           onError={(e) => {
                             const target = e.currentTarget as HTMLImageElement;
                             if (!target.dataset.triedFallback) {
@@ -327,11 +359,19 @@ export default function App() {
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-brand-blue to-brand-navy flex items-center justify-center text-white/50 text-sm">Metaspace Consulting</div>
                       )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-brand-blue/85 via-brand-blue/30 to-transparent flex flex-col justify-end p-6 sm:p-8">
-                        <div className="backdrop-blur-md bg-white/10 border border-white/20 p-5 rounded-2xl text-white shadow-lg">
-                          <p className="font-display font-bold text-base tracking-wide">Benin City Headquarters</p>
-                          <p className="text-xs text-white/90 mt-1 leading-snug">Anchoring technology ecosystem infrastructure & digital transformation across Nigeria's South-South region.</p>
+
+                      {/* Ultra-soft edge blend - minimized rim for completely seamless dissolve */}
+                      <div className="absolute inset-y-0 left-0 w-[5%] bg-gradient-to-r from-[#FCFDFE]/35 to-transparent pointer-events-none z-10" />
+                      <div className="absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-[#FCFDFE]/40 to-transparent pointer-events-none z-10" />
+                      <div className="absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-[#FCFDFE]/40 to-transparent pointer-events-none z-10" />
+
+                      {/* Refined Glass Headquarters Badge */}
+                      <div className="absolute bottom-5 right-5 sm:bottom-7 sm:right-7 z-20 backdrop-blur-md bg-white/85 border border-gray-100/90 p-4 rounded-2xl shadow-sm max-w-xs transition-all hover:bg-white/95">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-brand-crimson animate-pulse" />
+                          <p className="font-display font-bold text-xs sm:text-sm text-brand-blue tracking-wide">Benin City Headquarters</p>
                         </div>
+                        <p className="text-[11px] text-gray-600 mt-1 leading-snug">Anchoring technology ecosystem infrastructure & digital transformation across Nigeria's South-South region.</p>
                       </div>
                     </div>
                   </div>
@@ -1186,7 +1226,7 @@ export default function App() {
         {/* TAB 7: ADMIN/RECORDS LEDGER */}
         {currentTab === "admin" && (
           <div className="animate-in fade-in duration-200">
-            <AdminDashboard />
+            <AdminDashboard onConfigChange={applySiteConfig} />
           </div>
         )}
 

@@ -345,6 +345,7 @@ function saveLocalConfig(config: any) {
 
 import { 
   saveSiteConfigToFirestore, 
+  fetchSiteConfigFromFirestore,
   createConsultationInFirestore, 
   fetchConsultationsFromFirestore, 
   createContactInquiryInFirestore, 
@@ -354,18 +355,41 @@ import {
 // ---------------- API INTERCEPT WRAPPERS ----------------
 
 export async function apiFetchSiteConfig(): Promise<any> {
+  let config = getLocalConfig();
+
+  // 1. Try reading from server
   try {
     const res = await fetch("/api/site-config");
     if (res.ok) {
-      return await res.json();
+      const serverData = await res.json();
+      if (serverData && typeof serverData === "object") {
+        config = { ...config, ...serverData };
+      }
     }
   } catch (err) {
-    console.warn("Server API site-config failed. Using Client-side fallback.");
+    console.warn("Server API site-config failed. Using storage.");
   }
-  return getLocalConfig();
+
+  // 2. Fetch directly from Firestore (primary cloud database)
+  try {
+    const firestoreData = await fetchSiteConfigFromFirestore();
+    if (firestoreData && typeof firestoreData === "object") {
+      config = { ...config, ...firestoreData };
+      saveLocalConfig(config);
+    }
+  } catch (err) {
+    console.warn("Firestore config read error:", err);
+  }
+
+  return ensureConfigIntegrity(config);
 }
 
 export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
+  // Always update local storage first so immediate reads reflect changes
+  const local = getLocalConfig();
+  const merged = { ...local, ...updates };
+  saveLocalConfig(merged);
+
   // Sync to Firestore cloud database
   try {
     saveSiteConfigToFirestore(updates).catch(e => console.warn("Firestore site_config sync error:", e));
@@ -373,10 +397,10 @@ export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
     // Non-blocking
   }
 
-  // 1. Try to sync with Server first
+  // Sync with Server
   try {
     const pwd = localStorage.getItem("metaspace_admin_password") || "admin";
-    const res = await fetch("/api/admin/site-config", {
+    await fetch("/api/admin/site-config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -384,20 +408,10 @@ export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
         updates
       })
     });
-    if (res.ok) {
-      // Keep local storage in sync as well
-      const local = getLocalConfig();
-      saveLocalConfig({ ...local, ...updates });
-      return true;
-    }
   } catch (err) {
-    console.warn("Server API save-config failed. Saving client-side in localStorage.");
+    console.warn("Server API save-config failed. Saved in Firestore & local.");
   }
 
-  // 2. Save local-only if offline/cPanel static
-  const local = getLocalConfig();
-  const merged = { ...local, ...updates };
-  saveLocalConfig(merged);
   return true;
 }
 

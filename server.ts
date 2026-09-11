@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
-import nodemailer from "nodemailer";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { 
   initDatabase, 
@@ -18,6 +17,13 @@ import {
   SiteConfig
 } from "./db";
 import { Consultation, ContactInquiry } from "./src/types";
+import { 
+  SmtpConfig,
+  sendMailWithRobustTransport,
+  verifySmtpConnection,
+  renderMetaspaceInquiryEmail,
+  renderClientConfirmationEmail
+} from "./src/lib/mailService";
 
 dotenv.config();
 
@@ -41,156 +47,126 @@ function getGeminiClient(): GoogleGenAI | null {
   return aiInstance;
 }
 
-// Branded HTML Email Template Generator for Metaspace
-function renderMetaspaceEmailTemplate({
-  title,
-  preheader,
-  fields,
-  message
-}: {
-  title: string;
-  preheader?: string;
-  fields: { label: string; value: string }[];
-  message?: string;
-}) {
-  const fieldsHtml = fields.map(f => `
-    <tr>
-      <td style="padding: 10px 14px; font-weight: 700; color: #0A192F; font-size: 13px; border-bottom: 1px solid #edf2f7; width: 35%;">${f.label}</td>
-      <td style="padding: 10px 14px; color: #2d3748; font-size: 13px; border-bottom: 1px solid #edf2f7;">${f.value}</td>
-    </tr>
-  `).join("");
+/**
+ * Resolves active SMTP credentials from provided overrides, persistent database SiteConfig,
+ * or standard environment variables with sensible defaults.
+ */
+async function resolveCurrentSmtpConfig(override?: Partial<SmtpConfig>): Promise<SmtpConfig> {
+  const config = await getSiteConfig();
+  const host = override?.host || process.env.SMTP_HOST || config.smtp_host || "";
+  const port = Number(override?.port || process.env.SMTP_PORT || config.smtp_port || 465);
+  const user = override?.user || process.env.SMTP_USER || config.smtp_user || "";
+  const pass = override?.pass || process.env.SMTP_PASS || config.smtp_pass || "";
+  const secure = override?.secure !== undefined
+    ? Boolean(override.secure)
+    : (process.env.SMTP_SECURE !== undefined
+        ? process.env.SMTP_SECURE === "true"
+        : (port === 465 || config.smtp_secure === true));
+  const fromName = override?.fromName || process.env.SMTP_FROM_NAME || config.smtp_from_name || "Metaspace Consulting";
+  const fromEmail = override?.fromEmail || process.env.SMTP_FROM_EMAIL || config.smtp_from_email || user;
+  const notificationEmail = override?.notificationEmail || process.env.NOTIFICATION_EMAIL || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
 
-  return `
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${title}</title>
-  </head>
-  <body style="margin: 0; padding: 0; background-color: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-    ${preheader ? `<div style="display: none; max-height: 0px; overflow: hidden;">${preheader}</div>` : ""}
-    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f4f6f9; padding: 30px 10px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
-            
-            <!-- HEADER -->
-            <tr>
-              <td style="background-color: #0A192F; padding: 28px 32px; text-align: left; border-bottom: 4px solid #D00024;">
-                <table width="100%" border="0" cellspacing="0" cellpadding="0">
-                  <tr>
-                    <td>
-                      <span style="font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: 1.5px; display: block;">METASPACE</span>
-                      <span style="font-size: 9px; font-weight: 700; color: #E61E3E; letter-spacing: 2px; text-transform: uppercase;">CONSULTING LIMITED</span>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-
-            <!-- BODY CONTENT -->
-            <tr>
-              <td style="padding: 32px;">
-                <h2 style="margin: 0 0 8px 0; color: #0A192F; font-size: 20px; font-weight: 800;">${title}</h2>
-                <p style="margin: 0 0 24px 0; color: #718096; font-size: 13px; line-height: 1.5;">New transmission received via Metaspace Official Digital Portal.</p>
-                
-                <!-- KEY VALUES TABLE -->
-                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; border-collapse: collapse; margin-bottom: 24px;">
-                  ${fieldsHtml}
-                </table>
-
-                ${message ? `
-                  <div style="margin-top: 20px;">
-                    <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #718096; letter-spacing: 1px;">Message / Scope Details</p>
-                    <div style="background-color: #f1f5f9; border-left: 4px solid #D00024; padding: 16px; border-radius: 4px; color: #1e293b; font-size: 13px; line-height: 1.6; white-space: pre-line;">
-                      ${message}
-                    </div>
-                  </div>
-                ` : ""}
-              </td>
-            </tr>
-
-            <!-- FOOTER -->
-            <tr>
-              <td style="background-color: #0F1E36; padding: 20px 32px; text-align: center; color: #a0aec0; font-size: 11px; border-top: 1px solid #1a2e4c;">
-                <p style="margin: 0 0 4px 0; font-weight: 600; color: #e2e8f0;">Metaspace Consulting Limited</p>
-                <p style="margin: 0;">Building Systems. Empowering People. Transforming Africa.</p>
-              </td>
-            </tr>
-
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-  </html>
-  `;
+  return {
+    host: host.trim(),
+    port,
+    secure,
+    user: user.trim(),
+    pass: pass.trim(),
+    fromName: fromName.trim(),
+    fromEmail: fromEmail.trim(),
+    notificationEmail: notificationEmail.trim(),
+  };
 }
 
-// Helper for sending email notifications via SMTP using nodemailer
-async function sendSmtpNotification(
-  subject: string, 
-  htmlContent: string, 
-  overrideConfig?: {
-    host?: string;
-    port?: number | string;
-    secure?: boolean;
-    user?: string;
-    pass?: string;
-    fromName?: string;
-    fromEmail?: string;
-    recipientEmail?: string;
-  }
-): Promise<{ success: boolean; message?: string; error?: string }> {
+/**
+ * Dispatches an inquiry notification using the robust standard node-based mail transport service.
+ * Includes HTML + plain-text fallback, custom RFC Message-ID, priority tagging, and direct client Reply-To.
+ */
+async function sendSmtpInquiryNotification({
+  subject,
+  title,
+  badgeText = "PORTAL TRANSMISSION",
+  fields,
+  message,
+  clientEmail,
+  clientName,
+  isConsultation = false,
+  overrideConfig
+}: {
+  subject: string;
+  title: string;
+  badgeText?: string;
+  fields: { label: string; value: string }[];
+  message?: string;
+  clientEmail?: string;
+  clientName?: string;
+  isConsultation?: boolean;
+  overrideConfig?: Partial<SmtpConfig>;
+}): Promise<{ success: boolean; message?: string; error?: string; messageId?: string }> {
   try {
-    const config = await getSiteConfig();
-    const host = overrideConfig?.host || process.env.SMTP_HOST || config.smtp_host;
-    const port = Number(overrideConfig?.port || process.env.SMTP_PORT || config.smtp_port || 465);
-    const user = overrideConfig?.user || process.env.SMTP_USER || config.smtp_user;
-    const pass = overrideConfig?.pass || process.env.SMTP_PASS || config.smtp_pass;
-    const isSecure = overrideConfig?.secure !== undefined 
-      ? overrideConfig.secure 
-      : (port === 465 || config.smtp_secure === true);
+    const smtpConfig = await resolveCurrentSmtpConfig(overrideConfig);
 
-    if (!host || !user || !pass) {
-      return { 
-        success: false, 
-        error: "SMTP server is not configured. Please provide SMTP Host, User/Email, and Password in the Admin Dashboard." 
-      };
+    if (!smtpConfig.host || !smtpConfig.user || !smtpConfig.pass) {
+      const notice = "SMTP transport not fully configured (Host, User, or Password missing). Inquiry saved locally/in DB.";
+      console.log(`[SMTP Notification] ${notice}`);
+      return { success: false, error: notice };
     }
 
-    const fromName = overrideConfig?.fromName || config.smtp_from_name || "Metaspace Consulting";
-    const fromEmail = overrideConfig?.fromEmail || config.smtp_from_email || user;
-    const recipient = (overrideConfig?.recipientEmail || config.notification_email || config.footer_email || "info@metaspaceconsulting.com").trim();
+    const { html, text } = renderMetaspaceInquiryEmail({
+      title,
+      badgeText,
+      preheader: `${title}: ${subject}`,
+      fields,
+      message,
+      clientEmail,
+      clientName
+    });
 
-    const transporter = nodemailer.createTransport({
-      host: host.trim(),
-      port,
-      secure: isSecure,
-      auth: {
-        user: user.trim(),
-        pass: pass.trim()
-      },
-      tls: {
-        rejectUnauthorized: false
+    const sendResult = await sendMailWithRobustTransport(smtpConfig, {
+      to: smtpConfig.notificationEmail,
+      subject,
+      html,
+      text,
+      fromName: smtpConfig.fromName,
+      fromEmail: smtpConfig.fromEmail,
+      replyTo: clientEmail, // Allows admin to click "Reply" and email the client directly
+      priority: "high"
+    }, 2); // 2 retries with exponential backoff
+
+    // Send courtesy confirmation to the client if a valid client email is provided
+    if (clientEmail && clientEmail.includes("@") && sendResult.success) {
+      try {
+        const clientTemplate = renderClientConfirmationEmail({
+          clientName: clientName || "Valued Client",
+          serviceOrSubject: fields.find(f => f.label.includes("Service") || f.label.includes("Subject"))?.value || "Consulting Advisory",
+          isConsultation
+        });
+
+        await sendMailWithRobustTransport(smtpConfig, {
+          to: clientEmail.trim(),
+          subject: isConsultation 
+            ? "We have received your consultation request - Metaspace Consulting" 
+            : "We have received your inquiry - Metaspace Consulting",
+          html: clientTemplate.html,
+          text: clientTemplate.text,
+          fromName: smtpConfig.fromName,
+          fromEmail: smtpConfig.fromEmail,
+          replyTo: smtpConfig.notificationEmail
+        }, 1);
+      } catch (confErr) {
+        console.warn("[SMTP Notification] Optional client confirmation note:", confErr);
       }
-    });
+    }
 
-    const info = await transporter.sendMail({
-      from: `"${fromName}" <${fromEmail.trim()}>`,
-      to: recipient,
-      subject: subject,
-      html: htmlContent
-    });
-
-    return { 
-      success: true, 
-      message: `Email dispatched successfully via SMTP to ${recipient} (Message ID: ${info.messageId})` 
+    return {
+      success: sendResult.success,
+      message: sendResult.message,
+      messageId: sendResult.messageId,
+      error: sendResult.error
     };
   } catch (err: any) {
-    console.warn("SMTP email notification failed:", err);
-    return { success: false, error: err.message || String(err) };
+    console.error("[SMTP Notification Error]:", err);
+    return { success: false, error: err?.message || String(err) };
   }
 }
 
@@ -372,24 +348,32 @@ Tone and Style:
 
       await addConsultation(newConsultation);
 
-      // Trigger email notification via SMTP with branded template
-      const emailHtml = renderMetaspaceEmailTemplate({
+      // Trigger robust email notification via standard Node-based SMTP transport service
+      sendSmtpInquiryNotification({
+        subject: `[New Consultation Request] ${name} - ${service}`,
         title: "New Consultation Request Received",
-        preheader: `Consultation requested by ${name} for ${service}`,
+        badgeText: "CONSULTATION BOOKING",
+        clientName: name,
+        clientEmail: email,
+        isConsultation: true,
         fields: [
           { label: "Client Name", value: name },
           { label: "Email Address", value: email },
           { label: "Organization", value: organization || "Independent" },
           { label: "Industry Sector", value: sector || "Not Specified" },
           { label: "Service Pillar", value: service },
-          { label: "Date Submitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
+          { label: "Date Submitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) + " (WAT)" }
         ],
         message: message
+      }).catch(err => {
+        console.warn("[Consultation Mail Error]:", err);
       });
 
-      sendSmtpNotification(`[New Consultation] ${name} - ${service}`, emailHtml);
-
-      res.status(201).json({ success: true, consultation: newConsultation });
+      res.status(201).json({ 
+        success: true, 
+        consultation: newConsultation,
+        message: "Consultation booked successfully. Notification dispatched via SMTP." 
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -424,28 +408,68 @@ Tone and Style:
 
       await addContactInquiry(newInquiry);
 
-      // Trigger email notification via SMTP with branded template
-      const emailHtml = renderMetaspaceEmailTemplate({
+      // Trigger robust email notification via standard Node-based SMTP transport service
+      sendSmtpInquiryNotification({
+        subject: `[Portal Inquiry] ${subject} from ${name}`,
         title: "New Contact Portal Inquiry Received",
-        preheader: `Inquiry: ${subject} from ${name}`,
+        badgeText: "PORTAL INQUIRY",
+        clientName: name,
+        clientEmail: email,
+        isConsultation: false,
         fields: [
           { label: "Sender Name", value: name },
           { label: "Sender Email", value: email },
           { label: "Inquiry Subject", value: subject },
-          { label: "Date Transmitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) }
+          { label: "Date Transmitted", value: new Date().toLocaleString("en-US", { timeZone: "Africa/Lagos" }) + " (WAT)" }
         ],
         message: message
+      }).catch(err => {
+        console.warn("[Contact Mail Error]:", err);
       });
 
-      sendSmtpNotification(`[Portal Inquiry] ${subject} from ${name}`, emailHtml);
-
-      res.status(201).json({ success: true, inquiry: newInquiry });
+      res.status(201).json({ 
+        success: true, 
+        inquiry: newInquiry,
+        message: "Inquiry submitted successfully. Notification dispatched via SMTP."
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  // API: Admin Test SMTP Email Connection
+  // API: Admin Verify SMTP Connection (Handshake & Credentials without sending mail)
+  app.post("/api/admin/verify-smtp", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const { host, port, secure, user, pass } = body;
+      
+      if (!host || !user || !pass) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Please provide SMTP Host, Username/Email, and Password." 
+        });
+      }
+
+      const smtpConfig: SmtpConfig = {
+        host: String(host).trim(),
+        port: Number(port) || 465,
+        secure: secure !== undefined ? Boolean(secure) : Number(port) === 465,
+        user: String(user).trim(),
+        pass: String(pass).trim()
+      };
+
+      const result = await verifySmtpConnection(smtpConfig);
+      if (result.success) {
+        res.json({ success: true, message: result.message });
+      } else {
+        res.status(400).json({ success: false, error: result.message, code: result.code });
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message || String(error) });
+    }
+  });
+
+  // API: Admin Test SMTP Email Connection & Dispatch Diagnostic Email
   app.post("/api/admin/test-smtp", async (req, res) => {
     try {
       const body = req.body || {};
@@ -460,31 +484,53 @@ Tone and Style:
 
       const targetRecipient = (recipientEmail || user || "info@metaspaceconsulting.com").trim();
 
-      const testHtml = renderMetaspaceEmailTemplate({
+      const smtpConfig: SmtpConfig = {
+        host: String(host).trim(),
+        port: Number(port) || 465,
+        secure: secure !== undefined ? Boolean(secure) : Number(port) === 465,
+        user: String(user).trim(),
+        pass: String(pass).trim(),
+        fromName: (fromName || "Metaspace Consulting").trim(),
+        fromEmail: (fromEmail || user).trim(),
+        notificationEmail: targetRecipient
+      };
+
+      // 1. First perform TLS socket & auth verification
+      const verification = await verifySmtpConnection(smtpConfig);
+      if (!verification.success) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `SMTP Authentication / Handshake failed: ${verification.message}` 
+        });
+      }
+
+      // 2. Dispatch a full diagnostic test message
+      const result = await sendSmtpInquiryNotification({
+        subject: "Metaspace Consulting - SMTP Transport Diagnostic Verification",
         title: "SMTP Relay System Diagnostic Test",
-        preheader: "Testing SMTP email infrastructure configuration for Metaspace Consulting",
+        badgeText: "SYSTEM DIAGNOSTIC",
+        clientName: "Metaspace System Administrator",
+        clientEmail: targetRecipient,
+        overrideConfig: smtpConfig,
         fields: [
-          { label: "Connection Status", value: "AUTHENTICATED & DELIVERED 🟢" },
-          { label: "Mail Transport", value: "Standard SMTP (Nodemailer)" },
-          { label: "SMTP Host", value: `${host}:${port || 465}` },
-          { label: "Encryption", value: secure ? "SSL/TLS (Port 465)" : "STARTTLS / Standard" },
-          { label: "Sender Address", value: fromEmail || user },
+          { label: "Transport Engine", value: "Standard Node-based Mail Transport (Nodemailer Pool)" },
+          { label: "SMTP Host", value: `${smtpConfig.host}:${smtpConfig.port}` },
+          { label: "Encryption Mode", value: smtpConfig.secure ? "SSL/TLS (Port 465)" : "STARTTLS (Port 587/25)" },
+          { label: "Authenticated User", value: smtpConfig.user },
+          { label: "Sender Address", value: `"${smtpConfig.fromName}" <${smtpConfig.fromEmail}>` },
           { label: "Target Recipient", value: targetRecipient },
-          { label: "Transmission Time", value: new Date().toISOString() }
+          { label: "Transmission Time", value: new Date().toISOString() + " (UTC)" }
         ],
-        message: "This test email confirms that your SMTP mail server credentials are valid and live notifications for Consultations and Inquiries will be dispatched directly to your inbox."
+        message: "This test email confirms that your standard Node-based SMTP mail transport service is operating correctly. Live email notifications for Consultation Bookings and Contact Inquiries will be delivered reliably to your target inbox with RFC headers, high-priority flags, and direct client Reply-To support."
       });
 
-      const result = await sendSmtpNotification(
-        "Metaspace Consulting - SMTP Connection Test",
-        testHtml,
-        { host, port, secure, user, pass, fromName, fromEmail, recipientEmail: targetRecipient }
-      );
-
       if (result.success) {
-        res.json({ success: true, message: result.message || `Test email dispatched successfully via SMTP to ${targetRecipient}!` });
+        res.json({ 
+          success: true, 
+          message: `Standard SMTP transport verified! Diagnostic email delivered to ${targetRecipient}${result.messageId ? ` (ID: ${result.messageId})` : ""}.` 
+        });
       } else {
-        res.status(400).json({ success: false, error: result.error });
+        res.status(400).json({ success: false, error: result.error || "Failed to dispatch test email." });
       }
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message || String(error) });

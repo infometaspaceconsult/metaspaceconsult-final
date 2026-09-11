@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   ShieldCheck, RefreshCw, Calendar, Mail, FileText, CheckCircle, Clock, 
   Trash2, Plus, ArrowRight, Loader2, Sparkles, Image as ImageIcon, 
@@ -87,13 +87,63 @@ function CloudSaveNoticeBanner({ notice, onDismiss }: { notice: CloudSaveNotice 
   );
 }
 
-export default function AdminDashboard() {
+interface AdminDashboardProps {
+  onConfigChange?: (updatedConfig: any) => void;
+}
+
+export default function AdminDashboard({ onConfigChange }: AdminDashboardProps = {}) {
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [authError, setAuthError] = useState("");
+
+  // Inactivity auto-lock timer (10 minutes)
+  const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("metaspace_admin_token");
+    localStorage.removeItem("metaspace_admin_password");
+    localStorage.removeItem("metaspace_admin_username");
+    setIsAuthenticated(false);
+    setPassword("");
+    setMessage("");
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+    }
+  }, []);
+
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+    }
+    if (!isAuthenticated) return;
+
+    inactivityTimerRef.current = setTimeout(() => {
+      handleLogout();
+      setAuthError("Session auto-locked due to inactivity. Enter admin credentials & password to resume.");
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [isAuthenticated, handleLogout]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+      return;
+    }
+
+    const activityEvents = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
+    const handleActivity = () => resetInactivityTimer();
+
+    activityEvents.forEach((evt) => window.addEventListener(evt, handleActivity, { passive: true }));
+    resetInactivityTimer();
+
+    return () => {
+      activityEvents.forEach((evt) => window.removeEventListener(evt, handleActivity));
+      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+    };
+  }, [isAuthenticated, resetInactivityTimer]);
 
   // UI Tabs inside Admin: "ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor" | "admin_security"
   const [activeAdminTab, setActiveAdminTab] = useState<"ledger" | "text_editor" | "media_editor" | "ventures_services" | "footer_editor" | "admin_security">("ledger");
@@ -190,6 +240,7 @@ export default function AdminDashboard() {
   const [notificationEmail, setNotificationEmail] = useState("");
   const [smtpTestResult, setSmtpTestResult] = useState("");
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
+  const [isVerifyingSmtp, setIsVerifyingSmtp] = useState(false);
 
   // Restore existing session if authenticated in current browser
   useEffect(() => {
@@ -236,15 +287,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("metaspace_admin_token");
-    localStorage.removeItem("metaspace_admin_password");
-    localStorage.removeItem("metaspace_admin_username");
-    setIsAuthenticated(false);
-    setPassword("");
-    setAuthError("");
-    setMessage("");
-  };
 
   const fetchAdminData = async (pwd = password) => {
     setIsLoading(true);
@@ -453,6 +495,12 @@ export default function AdminDashboard() {
       // 2. Synchronize with server persistent ledger and localStorage
       await apiSaveSiteConfig(payload);
 
+      // Notify parent & dispatch global update event so all pages instantly reflect
+      onConfigChange?.(payload);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: payload }));
+      }
+
       setCloudSaveNotice(notice);
 
       if (notice.saved) {
@@ -535,6 +583,10 @@ export default function AdminDashboard() {
       };
       const notice = await savePageTextToCloudDatabase(payload, { username });
       await apiSaveSiteConfig(payload);
+      onConfigChange?.(payload);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: payload }));
+      }
       setTabSaveNotices(prev => ({ ...prev, text_editor: notice }));
       if (notice.saved) {
         setMessage("Page Text & Layout saved and verified in Cloud Database!");
@@ -589,6 +641,10 @@ export default function AdminDashboard() {
       };
       const notice = await saveMediaToCloudDatabase(payload, { username });
       await apiSaveSiteConfig(payload);
+      onConfigChange?.(payload);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: payload }));
+      }
       setTabSaveNotices(prev => ({ ...prev, media_editor: notice }));
       if (notice.saved) {
         setMessage("Images & Client Logos saved and verified in Cloud Database & Storage!");
@@ -623,6 +679,10 @@ export default function AdminDashboard() {
       const sToSave = overrideServices || services;
       const notice = await saveVenturesAndServicesToCloudDatabase(vToSave, sToSave, { username });
       await apiSaveSiteConfig({ ventures: vToSave, services: sToSave });
+      onConfigChange?.({ ventures: vToSave, services: sToSave });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { ventures: vToSave, services: sToSave } }));
+      }
       setTabSaveNotices(prev => ({ ...prev, ventures_services: notice }));
       if (notice.saved) {
         setMessage("Ventures & Services saved and verified in Cloud Database!");
@@ -668,6 +728,10 @@ export default function AdminDashboard() {
       };
       const notice = await saveFooterAndSupportToCloudDatabase(payload, { username });
       await apiSaveSiteConfig(payload);
+      onConfigChange?.(payload);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: payload }));
+      }
       setTabSaveNotices(prev => ({ ...prev, footer_editor: notice }));
       if (notice.saved) {
         setMessage("Footer & Chat Support saved and verified in Cloud Database!");
@@ -792,6 +856,39 @@ export default function AdminDashboard() {
       setFirestoreTestResult(`🔴 Firestore error: ${err.message || String(err)}`);
     } finally {
       setIsTestingFirestore(false);
+    }
+  };
+
+  const handleVerifySmtp = async () => {
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      setSmtpTestResult("🔴 Please fill in SMTP Host, Username/Email, and Password before verifying connection.");
+      return;
+    }
+    setIsVerifyingSmtp(true);
+    setSmtpTestResult("Connecting to SMTP socket and verifying authentication credentials...");
+    try {
+      const res = await fetch("/api/admin/verify-smtp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host: smtpHost.trim(),
+          port: Number(smtpPort) || 465,
+          secure: smtpSecure,
+          user: smtpUser.trim(),
+          pass: smtpPass,
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSmtpTestResult(`🟢 ${data.message || "SMTP connection verified! Socket connected and credentials authenticated successfully."}`);
+      } else {
+        setSmtpTestResult(`🔴 ${data.error || "SMTP verification failed. Please check host, port, username, and password."}`);
+      }
+    } catch (err: any) {
+      setSmtpTestResult(`🔴 Verification Error: ${err.message || String(err)}`);
+    } finally {
+      setIsVerifyingSmtp(false);
     }
   };
 
@@ -972,15 +1069,23 @@ export default function AdminDashboard() {
     };
     const updated = [...clientLogos, newLogo];
     setClientLogos(updated);
+    onConfigChange?.({ clientLogos: updated });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { clientLogos: updated } }));
+    }
     handleSaveConfig({ clientLogos: updated });
     handleSaveMediaToCloudDb({ clientLogos: updated });
-    setMessage("New client logo added successfully!");
+    setMessage("New client logo added and synced successfully!");
   };
 
   const handleUpdateClientLogoField = (index: number, key: keyof ClientLogo, val: string) => {
     const list = [...clientLogos];
     list[index] = { ...list[index], [key]: val };
     setClientLogos(list);
+    onConfigChange?.({ clientLogos: list });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { clientLogos: list } }));
+    }
   };
 
   const handleDeleteClientLogo = (index: number) => {
@@ -988,6 +1093,10 @@ export default function AdminDashboard() {
     if (!window.confirm(`Are you sure you want to remove "${logoName}" from the carousel?`)) return;
     const updated = clientLogos.filter((_, i) => i !== index);
     setClientLogos(updated);
+    onConfigChange?.({ clientLogos: updated });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { clientLogos: updated } }));
+    }
     handleSaveConfig({ clientLogos: updated });
     handleSaveMediaToCloudDb({ clientLogos: updated });
     setMessage(`Removed "${logoName}" from client carousel.`);
@@ -1004,6 +1113,10 @@ export default function AdminDashboard() {
         const list = [...clientLogos];
         list[index] = { ...list[index], logoUrl: result };
         setClientLogos(list);
+        onConfigChange?.({ clientLogos: list });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { clientLogos: list } }));
+        }
         handleSaveConfig({ clientLogos: list });
         handleSaveMediaToCloudDb({ clientLogos: list });
         setMessage(`Uploaded custom logo for "${list[index].name}"!`);
@@ -1015,6 +1128,10 @@ export default function AdminDashboard() {
   const handleResetDefaultClientLogos = () => {
     if (!window.confirm("Reset client logos back to original institutional partners?")) return;
     setClientLogos(CLIENT_LOGOS_DATA);
+    onConfigChange?.({ clientLogos: CLIENT_LOGOS_DATA });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("metaspace_config_updated", { detail: { clientLogos: CLIENT_LOGOS_DATA } }));
+    }
     handleSaveConfig({ clientLogos: CLIENT_LOGOS_DATA });
     handleSaveMediaToCloudDb({ clientLogos: CLIENT_LOGOS_DATA });
     setMessage("Client logos reset to default showcase.");
@@ -1036,7 +1153,7 @@ export default function AdminDashboard() {
               Metaspace Gatekeeper
             </h2>
             <p className="text-xs text-gray-400 font-sans">
-              Enter admin password to modify page contents & view transaction ledgers.
+              Enter admin credentials & password
             </p>
           </div>
 
@@ -1098,23 +1215,6 @@ export default function AdminDashboard() {
               {isLoggingIn ? <Loader2 size={13} className="animate-spin" /> : <ShieldCheck size={14} />}
               <span>Sign In to Console</span>
             </button>
-            <div className="pt-2 text-center space-y-2">
-              <span className="text-[10px] text-gray-400 font-sans block">
-                Default Access: Username: <strong className="text-gray-600">superadmin</strong> · Password: <strong className="text-gray-600">admin</strong>
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername("superadmin");
-                  setPassword("admin");
-                  setAuthError("");
-                }}
-                className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 text-[10px] font-semibold rounded-full transition cursor-pointer"
-              >
-                <KeyRound size={11} className="text-brand-blue" />
-                <span>Auto-fill Default Access</span>
-              </button>
-            </div>
           </form>
         </div>
       </div>
@@ -1789,17 +1889,76 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* SMTP MAIL SERVER INTEGRATION (NODEMAILER) */}
+            {/* SMTP MAIL SERVER INTEGRATION (STANDARD NODE-BASED MAIL TRANSPORT) */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 space-y-4 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1 bg-brand-blue" />
               <div className="flex items-center justify-between pb-2 border-b border-gray-50">
                 <h3 className="font-display font-bold text-sm text-brand-blue flex items-center gap-1.5">
                   <Mail size={14} className="text-brand-blue" />
-                  <span>SMTP Mail Delivery</span>
+                  <span>Node.js SMTP Mail Delivery Service</span>
                 </h3>
-                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-blue-100 text-brand-blue">
-                  Standard SMTP
+                <span className="px-2 py-0.5 text-[9px] font-extrabold uppercase rounded-full bg-emerald-100 text-emerald-800">
+                  Standard Transport Pool
                 </span>
+              </div>
+
+              {/* Quick Provider Presets */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Quick Fill Presets:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmtpHost("smtp.gmail.com");
+                      setSmtpPort("465");
+                      setSmtpSecure(true);
+                      setMessage("Applied Gmail preset (Port 465 SSL). Use a 16-char App Password.");
+                      setTimeout(() => setMessage(""), 4000);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-gray-100 hover:bg-brand-blue hover:text-white rounded-md transition cursor-pointer"
+                  >
+                    Google Gmail (465 SSL)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmtpHost("smtp.office365.com");
+                      setSmtpPort("587");
+                      setSmtpSecure(false);
+                      setMessage("Applied Microsoft 365 preset (Port 587 STARTTLS).");
+                      setTimeout(() => setMessage(""), 4000);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-gray-100 hover:bg-brand-blue hover:text-white rounded-md transition cursor-pointer"
+                  >
+                    Microsoft 365 (587 TLS)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmtpHost("mail.metaspaceconsulting.com");
+                      setSmtpPort("465");
+                      setSmtpSecure(true);
+                      setMessage("Applied Metaspace / cPanel enterprise preset.");
+                      setTimeout(() => setMessage(""), 4000);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-gray-100 hover:bg-brand-blue hover:text-white rounded-md transition cursor-pointer"
+                  >
+                    Metaspace cPanel (465 SSL)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSmtpHost("smtppro.zoho.com");
+                      setSmtpPort("465");
+                      setSmtpSecure(true);
+                      setMessage("Applied Zoho Mail preset (Port 465 SSL).");
+                      setTimeout(() => setMessage(""), 4000);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-gray-100 hover:bg-brand-blue hover:text-white rounded-md transition cursor-pointer"
+                  >
+                    Zoho Mail (465 SSL)
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -1851,14 +2010,15 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="flex flex-col space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400 uppercase">SMTP Password</label>
+                  <label className="text-[9px] font-bold text-gray-400 uppercase">SMTP Password / App Password</label>
                   <input
                     type="password"
                     value={smtpPass}
                     onChange={(e) => setSmtpPass(e.target.value)}
-                    placeholder="Enter SMTP password / App password"
+                    placeholder="Enter SMTP password or 16-char App Password"
                     className="px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 focus:border-brand-blue rounded-lg outline-none font-mono"
                   />
+                  <span className="text-[9px] text-gray-400">For Gmail/Workspace, generate a 16-character App Password under Google Account &gt; Security.</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1896,16 +2056,25 @@ export default function AdminDashboard() {
                 </div>
 
                 {smtpTestResult && (
-                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans">
+                  <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-xs leading-relaxed font-sans break-words">
                     {smtpTestResult}
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleVerifySmtp}
+                    disabled={isVerifyingSmtp || isTestingSmtp}
+                    className="py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer border border-gray-300"
+                  >
+                    {isVerifyingSmtp ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                    <span>{isVerifyingSmtp ? "Verifying..." : "Verify Socket"}</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleTestSmtp}
-                    disabled={isTestingSmtp}
+                    disabled={isTestingSmtp || isVerifyingSmtp}
                     className="py-2.5 bg-brand-blue hover:bg-brand-navy text-white text-[10px] font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer"
                   >
                     {isTestingSmtp ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -2098,11 +2267,20 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSaveMediaToCloudDb({ clientLogos })}
+                  disabled={tabIsSaving.media_editor}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  {tabIsSaving.media_editor ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                  <span>{tabIsSaving.media_editor ? "Saving to DB..." : "Save Carousel to DB"}</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleResetDefaultClientLogos}
-                  className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5"
+                  className="px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <RefreshCw size={11} />
                   <span>Reset Default Showcase</span>
@@ -2110,7 +2288,7 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={handleAddClientLogo}
-                  className="px-3 py-1.5 bg-brand-crimson hover:bg-red-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm"
+                  className="px-3 py-1.5 bg-brand-crimson hover:bg-red-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <Plus size={12} />
                   <span>Add Client Logo</span>
@@ -2132,7 +2310,7 @@ export default function AdminDashboard() {
                     <button
                       type="button"
                       onClick={() => handleDeleteClientLogo(index)}
-                      className="p-1.5 text-gray-400 hover:text-brand-crimson hover:bg-red-50 rounded-lg transition"
+                      className="p-1.5 text-gray-400 hover:text-brand-crimson hover:bg-red-50 rounded-lg transition cursor-pointer"
                       title="Delete Client Logo"
                     >
                       <Trash2 size={13} />
@@ -2180,7 +2358,7 @@ export default function AdminDashboard() {
                           type="text"
                           value={client.name}
                           onChange={(e) => handleUpdateClientLogoField(index, "name", e.target.value)}
-                          onBlur={() => handleSaveConfig({ clientLogos })}
+                          onBlur={() => handleSaveMediaToCloudDb({ clientLogos })}
                           placeholder="e.g. Edo Innovates Hub"
                           className="w-full text-xs font-semibold px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:border-brand-blue focus:outline-none"
                         />
@@ -2194,7 +2372,7 @@ export default function AdminDashboard() {
                           type="text"
                           value={client.logoUrl}
                           onChange={(e) => handleUpdateClientLogoField(index, "logoUrl", e.target.value)}
-                          onBlur={() => handleSaveConfig({ clientLogos })}
+                          onBlur={() => handleSaveMediaToCloudDb({ clientLogos })}
                           placeholder="https://... or data:image/..."
                           className="w-full text-[10px] text-gray-600 px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:border-brand-blue focus:outline-none"
                         />
@@ -2203,6 +2381,23 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Quick save banner for carousel */}
+            <div className="p-3.5 bg-blue-50/70 border border-blue-100/80 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-brand-blue font-medium">
+                <Database size={15} className="text-brand-crimson shrink-0" />
+                <span>Changed carousel partner logos? Save them directly into the database to reflect instantly across all visitor sessions.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSaveMediaToCloudDb({ clientLogos })}
+                disabled={tabIsSaving.media_editor}
+                className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold uppercase tracking-wider rounded-xl transition shadow flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                {tabIsSaving.media_editor ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                <span>{tabIsSaving.media_editor ? "Saving to DB..." : "Save Carousel to DB"}</span>
+              </button>
             </div>
 
             {/* Live Interactive Preview Box */}
