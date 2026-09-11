@@ -210,6 +210,11 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
 // Helper to call Gemini with optimized low-latency settings
 async function generateContentWithRetry(contents: any, systemInstruction: string, retries = 2, initialDelay = 200) {
   const ai = getGeminiClient();
