@@ -316,5 +316,25 @@
       "id": "client-8",
       "logoUrl": "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
     }
-  ]
+  ],
+  "smtp_host": "",
+  "smtp_port": 465,
+  "smtp_user": "",
+  "smtp_pass": "",
+  "smtp_from_name": "Metaspace Consulting",
+  "smtp_from_email": "info@metaspaceconsulting.com",
+  "notification_email": "info@metaspaceconsulting.com",
+  "adminUsernames": [
+    {
+      "username": "superadmin",
+      "password": "admin",
+      "isSuperadmin": true
+    },
+    {
+      "username": "admin",
+      "password": "admin",
+      "isSuperadmin": true
+    }
+  ],
+  "smtp_secure": true
 }

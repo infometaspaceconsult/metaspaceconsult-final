@@ -13,7 +13,7 @@ import {
   apiFetchConsultations, apiFetchInquiries,
   apiFetchAdminUsers, apiAddAdminUser, apiDeleteAdminUser,
   apiUpdateConsultationStatus, apiDeleteConsultation, apiDeleteInquiry,
-  apiCreateConsultation
+  apiCreateConsultation, apiChangePassword
 } from "../lib/apiFallback";
 import { 
   testFirestoreConnection, 
@@ -898,36 +898,41 @@ export default function AdminDashboard({ onConfigChange }: AdminDashboardProps =
       return;
     }
     setIsTestingSmtp(true);
-    setSmtpTestResult("Authenticating with SMTP server and dispatching test email...");
+    setSmtpTestResult("Authenticating with SMTP server and dispatching diagnostic email...");
     try {
+      const payload: any = {
+        host: smtpHost.trim(),
+        port: Number(smtpPort) || 465,
+        secure: smtpSecure,
+        user: smtpUser.trim(),
+        pass: smtpPass,
+        fromName: smtpFromName.trim() || "Metaspace Consulting",
+        fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
+        recipientEmail: (notificationEmail || footerEmail || "info@metaspaceconsulting.com").trim()
+      };
+
       const res = await fetch("/api/admin/test-smtp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          host: smtpHost.trim(),
-          port: Number(smtpPort) || 465,
-          secure: smtpSecure,
-          user: smtpUser.trim(),
-          pass: smtpPass,
-          fromName: smtpFromName.trim() || "Metaspace Consulting",
-          fromEmail: smtpFromEmail.trim() || smtpUser.trim(),
-          recipientEmail: (notificationEmail || footerEmail || "info@metaspaceconsulting.com").trim()
-        })
+        body: JSON.stringify(payload)
       });
 
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         setSmtpTestResult(`🟢 ${data.message || "SMTP test email transmitted successfully!"}`);
-        handleSaveConfig({
+        const savePayload: any = {
           smtp_host: smtpHost.trim(),
           smtp_port: Number(smtpPort) || 465,
           smtp_secure: smtpSecure,
           smtp_user: smtpUser.trim(),
-          smtp_pass: smtpPass,
           smtp_from_name: smtpFromName.trim(),
           smtp_from_email: smtpFromEmail.trim() || smtpUser.trim(),
           notification_email: notificationEmail.trim()
-        });
+        };
+        if (smtpPass && smtpPass !== "••••••••" && smtpPass.trim() !== "") {
+          savePayload.smtp_pass = smtpPass.trim();
+        }
+        await apiSaveSiteConfig(savePayload);
       } else {
         setSmtpTestResult(`🔴 ${data.error || "SMTP delivery failed. Please verify your host, credentials, and port."}`);
       }
@@ -938,19 +943,37 @@ export default function AdminDashboard({ onConfigChange }: AdminDashboardProps =
     }
   };
 
-  const handleSaveSmtp = () => {
-    handleSaveConfig({
-      smtp_host: smtpHost.trim(),
-      smtp_port: Number(smtpPort) || 465,
-      smtp_secure: smtpSecure,
-      smtp_user: smtpUser.trim(),
-      smtp_pass: smtpPass,
-      smtp_from_name: smtpFromName.trim(),
-      smtp_from_email: smtpFromEmail.trim() || smtpUser.trim(),
-      notification_email: notificationEmail.trim()
-    });
-    setMessage("SMTP configuration saved successfully!");
-    setTimeout(() => setMessage(""), 3000);
+  const handleSaveSmtp = async () => {
+    setIsLoading(true);
+    setMessage("");
+    setErrMessage("");
+    try {
+      const savePayload: any = {
+        smtp_host: smtpHost.trim(),
+        smtp_port: Number(smtpPort) || 465,
+        smtp_secure: smtpSecure,
+        smtp_user: smtpUser.trim(),
+        smtp_from_name: smtpFromName.trim(),
+        smtp_from_email: smtpFromEmail.trim() || smtpUser.trim(),
+        notification_email: notificationEmail.trim()
+      };
+      if (smtpPass && smtpPass !== "••••••••" && smtpPass.trim() !== "") {
+        savePayload.smtp_pass = smtpPass.trim();
+      }
+
+      const success = await apiSaveSiteConfig(savePayload);
+      if (success) {
+        setMessage("Node.js SMTP Mail Delivery Service configuration saved and synced successfully!");
+        fetchAdminData();
+        setTimeout(() => setMessage(""), 4000);
+      } else {
+        setErrMessage("Failed to save SMTP configuration.");
+      }
+    } catch (err: any) {
+      setErrMessage(err.message || "Failed to save SMTP configuration.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDeleteInquiry = async (id: string) => {
@@ -976,18 +999,20 @@ export default function AdminDashboard({ onConfigChange }: AdminDashboardProps =
     setMessage("");
     setErrMessage("");
     try {
-      const success = await apiSaveSiteConfig({ adminPassword: newPassword.trim() });
-      if (success) {
-        setMessage("Admin password changed successfully! Please log in again with your new password.");
-        setPassword(newPassword.trim());
-        localStorage.setItem("metaspace_admin_password", newPassword.trim());
+      const cleanNewPwd = newPassword.trim();
+      const res = await apiChangePassword(password, cleanNewPwd, username);
+      if (res.success) {
+        setMessage("Admin password changed and saved successfully across backend and database!");
+        setPassword(cleanNewPwd);
+        localStorage.setItem("metaspace_admin_password", cleanNewPwd);
         setNewPassword("");
-        setTimeout(() => setMessage(""), 4000);
+        fetchAdminData(cleanNewPwd);
+        setTimeout(() => setMessage(""), 5000);
       } else {
-        setErrMessage("Failed to update password.");
+        setErrMessage(res.error || "Failed to update password.");
       }
-    } catch (err) {
-      setErrMessage("Update operation failed.");
+    } catch (err: any) {
+      setErrMessage(err.message || "Update operation failed.");
     } finally {
       setIsLoading(false);
     }

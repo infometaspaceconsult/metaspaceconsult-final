@@ -260,6 +260,18 @@ const DEFAULT_CONFIG = {
       name: "Silicon Lagoon Alliance",
       logoUrl: "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?q=80&w=200&auto=format&fit=crop"
     }
+  ],
+  smtp_host: "",
+  smtp_port: 465,
+  smtp_secure: true,
+  smtp_user: "",
+  smtp_pass: "",
+  smtp_from_name: "Metaspace Consulting",
+  smtp_from_email: "info@metaspaceconsulting.com",
+  notification_email: "info@metaspaceconsulting.com",
+  adminUsernames: [
+    { username: "superadmin", password: "admin", isSuperadmin: true },
+    { username: "admin", password: "admin", isSuperadmin: true }
   ]
 };
 
@@ -385,27 +397,49 @@ export async function apiFetchSiteConfig(): Promise<any> {
 }
 
 export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
-  // Always update local storage first so immediate reads reflect changes
   const local = getLocalConfig();
-  const merged = { ...local, ...updates };
+  const cleanedUpdates = { ...updates };
+
+  // Guard: Never clobber existing SMTP password with placeholder or empty string
+  if (cleanedUpdates.smtp_pass === "••••••••" || (cleanedUpdates.smtp_pass === "" && local.smtp_pass)) {
+    delete cleanedUpdates.smtp_pass;
+  }
+
+  // Guard: If adminPassword is being changed via site config, update adminUsernames accordingly
+  if (cleanedUpdates.adminPassword && typeof cleanedUpdates.adminPassword === "string" && cleanedUpdates.adminPassword.trim().length >= 3) {
+    const cleanPwd = cleanedUpdates.adminPassword.trim();
+    cleanedUpdates.adminPassword = cleanPwd;
+    const admins = (local.adminUsernames || [
+      { username: "superadmin", password: cleanPwd, isSuperadmin: true },
+      { username: "admin", password: cleanPwd, isSuperadmin: true }
+    ]).map((a: any) => ({ ...a, password: cleanPwd }));
+    cleanedUpdates.adminUsernames = admins;
+    localStorage.setItem("metaspace_admin_password", cleanPwd);
+  }
+
+  // Always update local storage first so immediate reads reflect changes
+  const merged = { ...local, ...cleanedUpdates };
   saveLocalConfig(merged);
 
   // Sync to Firestore cloud database
   try {
-    saveSiteConfigToFirestore(updates).catch(e => console.warn("Firestore site_config sync error:", e));
+    saveSiteConfigToFirestore(cleanedUpdates).catch(e => console.warn("Firestore site_config sync error:", e));
   } catch (e) {
     // Non-blocking
   }
 
   // Sync with Server
   try {
-    const pwd = localStorage.getItem("metaspace_admin_password") || "admin";
+    const pwd = localStorage.getItem("metaspace_admin_password") || local.adminPassword || "admin";
     await fetch("/api/admin/site-config", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "x-admin-password": pwd
+      },
       body: JSON.stringify({
         password: pwd,
-        updates
+        updates: cleanedUpdates
       })
     });
   } catch (err) {
@@ -413,6 +447,74 @@ export async function apiSaveSiteConfig(updates: any): Promise<boolean> {
   }
 
   return true;
+}
+
+export async function apiChangePassword(
+  currentPassword: string,
+  newPassword: string,
+  username?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const cleanNewPwd = (newPassword || "").trim();
+  const cleanCurPwd = (currentPassword || "").trim();
+
+  if (!cleanNewPwd || cleanNewPwd.length < 3) {
+    return { success: false, error: "New password must be at least 3 characters long." };
+  }
+
+  // 1. Try Server Endpoint
+  try {
+    const res = await fetch("/api/admin/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentPassword: cleanCurPwd,
+        newPassword: cleanNewPwd,
+        username: username || "superadmin"
+      })
+    });
+
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        return { success: false, error: data.error || "Failed to change administrator password." };
+      }
+    }
+  } catch (err) {
+    console.warn("Server API change-password failed. Updating local and cloud state.");
+  }
+
+  // 2. Synchronize local and Firestore
+  const local = getLocalConfig();
+  const actualPassword = (local.adminPassword || "admin").trim();
+  const admins = (local.adminUsernames || [
+    { username: "superadmin", password: actualPassword, isSuperadmin: true },
+    { username: "admin", password: actualPassword, isSuperadmin: true }
+  ]).map((a: any) => {
+    if (!username || a.username.toLowerCase() === (username || "").toLowerCase() || a.isSuperadmin) {
+      return { ...a, password: cleanNewPwd };
+    }
+    return a;
+  });
+
+  const updatedConfig = {
+    ...local,
+    adminPassword: cleanNewPwd,
+    adminUsernames: admins
+  };
+  saveLocalConfig(updatedConfig);
+  localStorage.setItem("metaspace_admin_password", cleanNewPwd);
+
+  try {
+    saveSiteConfigToFirestore({
+      adminPassword: cleanNewPwd,
+      adminUsernames: admins
+    }).catch(e => console.warn("Firestore password sync error:", e));
+  } catch (e) {
+    // Non-blocking
+  }
+
+  return { success: true, message: "Admin password updated successfully across system!" };
 }
 
 export async function apiLoginAdmin(
@@ -449,34 +551,16 @@ export async function apiLoginAdmin(
           isSuperadmin: data.user?.isSuperadmin ?? true
         };
       } else if (res.status === 401) {
-        // If server 401, check if the password matches master credentials before failing
-        const config = getLocalConfig();
-        const actualPassword = (config.adminPassword || "admin").trim();
-        const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
-        const isMaster = 
-          cleanPassword === actualPassword || 
-          MASTER_CODES.includes(cleanPassword.toLowerCase());
-        
-        if (isMaster) {
-          return {
-            success: true,
-            token: "metaspace-master-token-" + Date.now(),
-            username: cleanUsername || "superadmin",
-            isSuperadmin: true
-          };
-        } else {
-          return { success: false, error: data.error || "Incorrect administrator credentials. Default password is 'admin'." };
-        }
+        return { success: false, error: data.error || "Incorrect administrator credentials." };
       }
     }
   } catch (err) {
     console.warn("Server API login unavailable. Proceeding with client fallback.");
   }
 
-  // 2. Client-side Fallback & Offline Verification (for Vercel/cPanel/Static exports)
+  // 2. Client-side Fallback & Offline Verification
   const config = getLocalConfig();
   const actualPassword = (config.adminPassword || "admin").trim();
-  const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
   
   const admins = config.adminUsernames || [
     { username: "superadmin", password: actualPassword, isSuperadmin: true },
@@ -487,11 +571,12 @@ export async function apiLoginAdmin(
     (a.username || "").toLowerCase() === cleanUsername && ((a.password || "").trim() === cleanPassword)
   );
 
-  const isMasterPassword = 
+  const isValidPassword = 
     cleanPassword === actualPassword || 
-    MASTER_CODES.includes(cleanPassword.toLowerCase());
+    foundAdmin !== undefined || 
+    (actualPassword === "admin" && cleanPassword === "admin");
 
-  if (foundAdmin || isMasterPassword) {
+  if (isValidPassword) {
     return { 
       success: true, 
       token: "metaspace-auth-token-" + Date.now(),
@@ -499,7 +584,7 @@ export async function apiLoginAdmin(
       isSuperadmin: foundAdmin?.isSuperadmin ?? true
     };
   } else {
-    return { success: false, error: "Incorrect administrator credentials. Default password is 'admin'." };
+    return { success: false, error: "Incorrect administrator credentials." };
   }
 }
 
@@ -528,7 +613,12 @@ export async function apiAddAdminUser(password: string, newAdmin: { username: st
     const res = await fetch("/api/admin/users", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password, ...newAdmin })
+      body: JSON.stringify({ 
+        currentPassword: password, 
+        username: newAdmin.username, 
+        newPassword: newAdmin.password, 
+        isSuperadmin: newAdmin.isSuperadmin 
+      })
     });
     if (res.ok) {
       const data = await res.json();
@@ -539,15 +629,17 @@ export async function apiAddAdminUser(password: string, newAdmin: { username: st
     }
   } catch (e: any) {
     const config = getLocalConfig();
+    const actualPassword = (config.adminPassword || "admin").trim();
     const admins = config.adminUsernames || [
-      { username: "superadmin", password: "admin", isSuperadmin: true },
-      { username: "admin", password: "admin", isSuperadmin: true }
+      { username: "superadmin", password: actualPassword, isSuperadmin: true },
+      { username: "admin", password: actualPassword, isSuperadmin: true }
     ];
     const idx = admins.findIndex(a => a.username.toLowerCase() === newAdmin.username.toLowerCase());
+    const newUserPwd = newAdmin.password && newAdmin.password.trim().length >= 3 ? newAdmin.password.trim() : actualPassword;
     if (idx >= 0) {
-      admins[idx] = { ...admins[idx], ...newAdmin };
+      admins[idx] = { ...admins[idx], username: newAdmin.username, password: newUserPwd, isSuperadmin: newAdmin.isSuperadmin };
     } else {
-      admins.push(newAdmin);
+      admins.push({ username: newAdmin.username, password: newUserPwd, isSuperadmin: newAdmin.isSuperadmin });
     }
     saveLocalConfig({ ...config, adminUsernames: admins });
     return { success: true, users: admins.map(a => ({ username: a.username, isSuperadmin: Boolean(a.isSuperadmin) })) };

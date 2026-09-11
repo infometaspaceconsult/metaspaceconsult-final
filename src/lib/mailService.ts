@@ -53,7 +53,7 @@ let cachedTransporter: CachedTransporter | null = null;
  * Generate unique signature for SMTP configuration to detect credential/server changes
  */
 function getSmtpSignature(config: SmtpConfig): string {
-  return `${config.host}:${config.port}:${config.user}:${config.secure ? "ssl" : "tls"}`;
+  return `${config.host}:${config.port}:${config.user}:${config.pass}:${config.secure ? "ssl" : "tls"}`;
 }
 
 /**

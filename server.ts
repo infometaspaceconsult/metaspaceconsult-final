@@ -53,10 +53,15 @@ function getGeminiClient(): GoogleGenAI | null {
  */
 async function resolveCurrentSmtpConfig(override?: Partial<SmtpConfig>): Promise<SmtpConfig> {
   const config = await getSiteConfig();
-  const host = override?.host || process.env.SMTP_HOST || config.smtp_host || "";
+  const host = (override?.host && override.host.trim() !== "") ? override.host : (process.env.SMTP_HOST || config.smtp_host || "");
   const port = Number(override?.port || process.env.SMTP_PORT || config.smtp_port || 465);
-  const user = override?.user || process.env.SMTP_USER || config.smtp_user || "";
-  const pass = override?.pass || process.env.SMTP_PASS || config.smtp_pass || "";
+  const user = (override?.user && override.user.trim() !== "") ? override.user : (process.env.SMTP_USER || config.smtp_user || "");
+  
+  let pass = override?.pass;
+  if (!pass || pass === "••••••••" || pass.trim() === "") {
+    pass = process.env.SMTP_PASS || config.smtp_pass || "";
+  }
+
   const secure = override?.secure !== undefined
     ? Boolean(override.secure)
     : (process.env.SMTP_SECURE !== undefined
@@ -67,14 +72,14 @@ async function resolveCurrentSmtpConfig(override?: Partial<SmtpConfig>): Promise
   const notificationEmail = override?.notificationEmail || process.env.NOTIFICATION_EMAIL || config.notification_email || config.footer_email || "info@metaspaceconsulting.com";
 
   return {
-    host: host.trim(),
+    host: String(host).trim(),
     port,
     secure,
-    user: user.trim(),
-    pass: pass.trim(),
-    fromName: fromName.trim(),
-    fromEmail: fromEmail.trim(),
-    notificationEmail: notificationEmail.trim(),
+    user: String(user).trim(),
+    pass: String(pass).trim(),
+    fromName: String(fromName).trim(),
+    fromEmail: String(fromEmail).trim(),
+    notificationEmail: String(notificationEmail).trim(),
   };
 }
 
@@ -91,6 +96,7 @@ async function sendSmtpInquiryNotification({
   clientEmail,
   clientName,
   isConsultation = false,
+  skipCourtesyConfirmation = false,
   overrideConfig
 }: {
   subject: string;
@@ -101,6 +107,7 @@ async function sendSmtpInquiryNotification({
   clientEmail?: string;
   clientName?: string;
   isConsultation?: boolean;
+  skipCourtesyConfirmation?: boolean;
   overrideConfig?: Partial<SmtpConfig>;
 }): Promise<{ success: boolean; message?: string; error?: string; messageId?: string }> {
   try {
@@ -134,7 +141,7 @@ async function sendSmtpInquiryNotification({
     }, 2); // 2 retries with exponential backoff
 
     // Send courtesy confirmation to the client if a valid client email is provided
-    if (clientEmail && clientEmail.includes("@") && sendResult.success) {
+    if (!skipCourtesyConfirmation && clientEmail && clientEmail.includes("@") && sendResult.success) {
       try {
         const clientTemplate = renderClientConfirmationEmail({
           clientName: clientName || "Valued Client",
@@ -442,20 +449,29 @@ Tone and Style:
     try {
       const body = req.body || {};
       const { host, port, secure, user, pass } = body;
+      const config = await getSiteConfig();
       
-      if (!host || !user || !pass) {
+      const actualHost = (host && String(host).trim() !== "") ? String(host).trim() : (config.smtp_host || process.env.SMTP_HOST || "");
+      const actualPort = Number(port || config.smtp_port || process.env.SMTP_PORT || 465);
+      const actualSecure = secure !== undefined ? Boolean(secure) : (actualPort === 465 || config.smtp_secure === true);
+      const actualUser = (user && String(user).trim() !== "") ? String(user).trim() : (config.smtp_user || process.env.SMTP_USER || "");
+      const actualPass = (pass && String(pass).trim() !== "" && String(pass).trim() !== "••••••••")
+        ? String(pass).trim()
+        : (config.smtp_pass || process.env.SMTP_PASS || "");
+
+      if (!actualHost || !actualUser || !actualPass) {
         return res.status(400).json({ 
           success: false, 
-          error: "Please provide SMTP Host, Username/Email, and Password." 
+          error: "Please provide SMTP Host, Username/Email, and Password before verifying." 
         });
       }
 
       const smtpConfig: SmtpConfig = {
-        host: String(host).trim(),
-        port: Number(port) || 465,
-        secure: secure !== undefined ? Boolean(secure) : Number(port) === 465,
-        user: String(user).trim(),
-        pass: String(pass).trim()
+        host: actualHost,
+        port: actualPort,
+        secure: actualSecure,
+        user: actualUser,
+        pass: actualPass
       };
 
       const result = await verifySmtpConnection(smtpConfig);
@@ -474,24 +490,33 @@ Tone and Style:
     try {
       const body = req.body || {};
       const { host, port, secure, user, pass, fromName, fromEmail, recipientEmail } = body;
-      
-      if (!host || !user || !pass) {
+      const config = await getSiteConfig();
+
+      const actualHost = (host && String(host).trim() !== "") ? String(host).trim() : (config.smtp_host || process.env.SMTP_HOST || "");
+      const actualPort = Number(port || config.smtp_port || process.env.SMTP_PORT || 465);
+      const actualSecure = secure !== undefined ? Boolean(secure) : (actualPort === 465 || config.smtp_secure === true);
+      const actualUser = (user && String(user).trim() !== "") ? String(user).trim() : (config.smtp_user || process.env.SMTP_USER || "");
+      const actualPass = (pass && String(pass).trim() !== "" && String(pass).trim() !== "••••••••")
+        ? String(pass).trim()
+        : (config.smtp_pass || process.env.SMTP_PASS || "");
+
+      if (!actualHost || !actualUser || !actualPass) {
         return res.status(400).json({ 
           success: false, 
-          error: "Please provide SMTP Host, Username/Email, and Password." 
+          error: "Please provide SMTP Host, Username/Email, and Password before dispatching test email." 
         });
       }
 
-      const targetRecipient = (recipientEmail || user || "info@metaspaceconsulting.com").trim();
+      const targetRecipient = (recipientEmail || actualUser || config.notification_email || "info@metaspaceconsulting.com").trim();
 
       const smtpConfig: SmtpConfig = {
-        host: String(host).trim(),
-        port: Number(port) || 465,
-        secure: secure !== undefined ? Boolean(secure) : Number(port) === 465,
-        user: String(user).trim(),
-        pass: String(pass).trim(),
-        fromName: (fromName || "Metaspace Consulting").trim(),
-        fromEmail: (fromEmail || user).trim(),
+        host: actualHost,
+        port: actualPort,
+        secure: actualSecure,
+        user: actualUser,
+        pass: actualPass,
+        fromName: (fromName || config.smtp_from_name || "Metaspace Consulting").trim(),
+        fromEmail: (fromEmail || config.smtp_from_email || actualUser).trim(),
         notificationEmail: targetRecipient
       };
 
@@ -511,6 +536,7 @@ Tone and Style:
         badgeText: "SYSTEM DIAGNOSTIC",
         clientName: "Metaspace System Administrator",
         clientEmail: targetRecipient,
+        skipCourtesyConfirmation: true,
         overrideConfig: smtpConfig,
         fields: [
           { label: "Transport Engine", value: "Standard Node-based Mail Transport (Nodemailer Pool)" },
@@ -594,14 +620,14 @@ Tone and Style:
         { username: "admin", password: actualPassword, isSuperadmin: true }
       ];
 
-      const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
-      const isMasterCode = MASTER_CODES.includes(cleanPassword.toLowerCase()) || cleanPassword === actualPassword;
-
       const foundUser = admins.find((a: any) => 
-        (a.username || "").toLowerCase() === cleanUsername && ((a.password || "").trim() === cleanPassword || isMasterCode)
+        (a.username || "").toLowerCase() === cleanUsername && ((a.password || "").trim() === cleanPassword)
       );
 
-      const isValidPassword = foundUser !== undefined || isMasterCode;
+      const isValidPassword = 
+        cleanPassword === actualPassword || 
+        foundUser !== undefined ||
+        (actualPassword === "admin" && cleanPassword === "admin");
 
       if (isValidPassword) {
         return res.json({ 
@@ -613,7 +639,7 @@ Tone and Style:
           }
         });
       } else {
-        return res.status(401).json({ error: "Invalid username or administrator password. Default password is 'admin'." });
+        return res.status(401).json({ error: "Invalid username or administrator password." });
       }
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -623,43 +649,42 @@ Tone and Style:
   // Admin Change Password
   app.post("/api/admin/change-password", async (req, res) => {
     try {
-      const { currentPassword, newPassword, username } = req.body;
+      const { currentPassword, newPassword, username } = req.body || {};
       const config = await getSiteConfig();
       const actualPassword = (config.adminPassword || "admin").trim();
-      const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
+
+      const admins = config.adminUsernames || [
+        { username: "superadmin", password: actualPassword, isSuperadmin: true },
+        { username: "admin", password: actualPassword, isSuperadmin: true }
+      ];
 
       const isCurrentValid = 
         currentPassword === actualPassword || 
-        MASTER_CODES.includes((currentPassword || "").toLowerCase());
+        (actualPassword === "admin" && currentPassword === "admin") ||
+        admins.some((a: any) => (a.username || "").toLowerCase() === (username || "").toLowerCase() && a.password === currentPassword);
 
       if (!isCurrentValid) {
-        const admins = config.adminUsernames || [];
-        const matchingUser = admins.find((a: any) => a.username.toLowerCase() === (username || "").toLowerCase() && a.password === currentPassword);
-        if (!matchingUser) {
-          return res.status(401).json({ error: "Current password is incorrect." });
-        }
+        return res.status(401).json({ error: "Current administrator password is incorrect." });
       }
 
-      if (!newPassword || newPassword.trim().length < 3) {
+      if (!newPassword || typeof newPassword !== "string" || newPassword.trim().length < 3) {
         return res.status(400).json({ error: "New password must be at least 3 characters long." });
       }
 
-      const updatedAdmins = (config.adminUsernames || [
-        { username: "superadmin", password: actualPassword, isSuperadmin: true },
-        { username: "admin", password: actualPassword, isSuperadmin: true }
-      ]).map((a: any) => {
+      const cleanNewPassword = newPassword.trim();
+      const updatedAdmins = admins.map((a: any) => {
         if (!username || a.username.toLowerCase() === (username || "").toLowerCase() || a.isSuperadmin) {
-          return { ...a, password: newPassword };
+          return { ...a, password: cleanNewPassword };
         }
         return a;
       });
 
       await updateSiteConfig({
-        adminPassword: newPassword,
+        adminPassword: cleanNewPassword,
         adminUsernames: updatedAdmins
       });
 
-      res.json({ success: true, message: "Password updated successfully." });
+      res.json({ success: true, message: "Administrator password updated successfully." });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -670,8 +695,7 @@ Tone and Style:
     try {
       const config = await getSiteConfig();
       const actualPassword = (config.adminPassword || "admin").trim();
-      const authHeader = req.headers["x-admin-password"] as string;
-      const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
+      const authHeader = (req.headers["x-admin-password"] as string) || "";
 
       const admins = config.adminUsernames || [
         { username: "superadmin", password: actualPassword, isSuperadmin: true },
@@ -680,7 +704,7 @@ Tone and Style:
 
       const isAuthorized = 
         authHeader === actualPassword || 
-        MASTER_CODES.includes((authHeader || "").toLowerCase()) ||
+        (actualPassword === "admin" && authHeader === "admin") ||
         admins.some((a: any) => a.password === authHeader);
 
       if (!isAuthorized) {
@@ -701,10 +725,10 @@ Tone and Style:
   // Add or Update Admin User
   app.post("/api/admin/users", async (req, res) => {
     try {
-      const { password, username: newUsername, password: newPassword, isSuperadmin } = req.body;
+      const { password, currentPassword, username: newUsername, newPassword, isSuperadmin } = req.body || {};
+      const authPassword = currentPassword || password || (req.headers["x-admin-password"] as string) || "";
       const config = await getSiteConfig();
       const actualPassword = (config.adminPassword || "admin").trim();
-      const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
 
       const admins = config.adminUsernames || [
         { username: "superadmin", password: actualPassword, isSuperadmin: true },
@@ -712,9 +736,9 @@ Tone and Style:
       ];
 
       const isAuthorized = 
-        password === actualPassword || 
-        MASTER_CODES.includes((password || "").toLowerCase()) ||
-        admins.some((a: any) => a.password === password);
+        authPassword === actualPassword || 
+        (actualPassword === "admin" && authPassword === "admin") ||
+        admins.some((a: any) => a.password === authPassword);
 
       if (!isAuthorized) {
         return res.status(401).json({ error: "Unauthorized access." });
@@ -727,7 +751,9 @@ Tone and Style:
       const cleanUsername = newUsername.trim();
       const userIndex = admins.findIndex((a: any) => a.username.toLowerCase() === cleanUsername.toLowerCase());
 
-      const userPwd = newPassword && newPassword.trim().length >= 3 ? newPassword.trim() : actualPassword;
+      const userPwd = newPassword && typeof newPassword === "string" && newPassword.trim().length >= 3 
+        ? newPassword.trim() 
+        : actualPassword;
 
       if (userIndex >= 0) {
         admins[userIndex] = {
@@ -746,7 +772,7 @@ Tone and Style:
 
       const updatesToApply: any = { adminUsernames: admins };
       if (cleanUsername.toLowerCase() === "superadmin" && newPassword) {
-        updatesToApply.adminPassword = newPassword;
+        updatesToApply.adminPassword = userPwd;
       }
 
       await updateSiteConfig(updatesToApply);
@@ -756,7 +782,7 @@ Tone and Style:
         isSuperadmin: Boolean(a.isSuperadmin)
       }));
 
-      res.json({ success: true, users: safeAdmins, message: `Admin account for ${cleanUsername} created/updated.` });
+      res.json({ success: true, users: safeAdmins, message: `Admin account for ${cleanUsername} saved successfully.` });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -766,10 +792,10 @@ Tone and Style:
   app.delete("/api/admin/users/:targetUsername", async (req, res) => {
     try {
       const { targetUsername } = req.params;
-      const { password } = req.body;
+      const { password, currentPassword } = req.body || {};
+      const authPassword = currentPassword || password || (req.headers["x-admin-password"] as string) || "";
       const config = await getSiteConfig();
       const actualPassword = (config.adminPassword || "admin").trim();
-      const MASTER_CODES = ["admin", "superadmin", "metaspace", "metaspace2026", "admin123", "123456"];
 
       const admins = config.adminUsernames || [
         { username: "superadmin", password: actualPassword, isSuperadmin: true },
@@ -777,9 +803,9 @@ Tone and Style:
       ];
 
       const isAuthorized = 
-        password === actualPassword || 
-        MASTER_CODES.includes((password || "").toLowerCase()) ||
-        admins.some((a: any) => a.password === password);
+        authPassword === actualPassword || 
+        (actualPassword === "admin" && authPassword === "admin") ||
+        admins.some((a: any) => a.password === authPassword);
 
       if (!isAuthorized) {
         return res.status(401).json({ error: "Unauthorized access." });
@@ -811,20 +837,35 @@ Tone and Style:
   // Update Site Config (with admin verification)
   app.post("/api/admin/site-config", async (req, res) => {
     try {
-      const { password, updates } = req.body;
+      const { password, updates } = req.body || {};
+      const authHeader = (req.headers["x-admin-password"] as string) || "";
+      const effectivePassword = password || authHeader;
       const config = await getSiteConfig();
-      const actualPassword = config.adminPassword || "admin";
+      const actualPassword = (config.adminPassword || "admin").trim();
 
-      if (password !== actualPassword) {
-        const admins = config.adminUsernames || [];
-        const validAdmin = admins.some((a: any) => a.password === password || password === actualPassword);
-        if (!validAdmin && password !== "admin") {
-          return res.status(401).json({ error: "Unauthorized access." });
-        }
+      const admins = config.adminUsernames || [];
+      const isAuthorized = 
+        effectivePassword === actualPassword || 
+        (actualPassword === "admin" && effectivePassword === "admin") ||
+        admins.some((a: any) => a.password === effectivePassword);
+
+      if (!isAuthorized) {
+        return res.status(401).json({ error: "Unauthorized access." });
       }
 
       if (!updates || typeof updates !== "object") {
         return res.status(400).json({ error: "Invalid updates format." });
+      }
+
+      // If updating adminPassword via site-config, also sync adminUsernames
+      if (updates.adminPassword && typeof updates.adminPassword === "string" && updates.adminPassword.trim().length >= 3) {
+        const cleanPwd = updates.adminPassword.trim();
+        updates.adminPassword = cleanPwd;
+        const currentAdmins = config.adminUsernames || [
+          { username: "superadmin", password: cleanPwd, isSuperadmin: true },
+          { username: "admin", password: cleanPwd, isSuperadmin: true }
+        ];
+        updates.adminUsernames = currentAdmins.map((a: any) => ({ ...a, password: cleanPwd }));
       }
 
       const updatedConfig = await updateSiteConfig(updates);
