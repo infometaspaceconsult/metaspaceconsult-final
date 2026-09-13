@@ -1,5 +1,5 @@
 import React from "react";
-import { Mail, Phone, MapPin, Linkedin, Twitter, Facebook, Instagram } from "lucide-react";
+import { Mail, Phone, MapPin, Linkedin, Twitter, Facebook, Instagram, ExternalLink } from "lucide-react";
 import { TabType, Venture } from "../types";
 import MetaspaceLogo from "./MetaspaceLogo";
 
@@ -66,17 +66,31 @@ export default function Footer({
           }));
 
   // Dynamically generate ventures links from loaded ventures state or custom override
-  const venturesLinksToRender = 
+  const venturesLinksToRender: { label: string; tab: string; url?: string }[] = 
     footerVenturesLinks && footerVenturesLinks.length > 0
-      ? footerVenturesLinks
+      ? footerVenturesLinks.map(l => {
+          const matched = ventures?.find(
+            v => v && (
+              v.id?.toLowerCase() === l.label?.toLowerCase() ||
+              v.name?.toLowerCase() === l.label?.toLowerCase() ||
+              (l.label && v.name && v.name.toLowerCase().includes(l.label.toLowerCase())) ||
+              (l.label && v.name && l.label.toLowerCase().includes(v.name.toLowerCase()))
+            )
+          );
+          return {
+            label: l.label,
+            tab: l.tab || "ventures",
+            url: (l as any).url || matched?.url
+          };
+        })
       : (ventures && ventures.length > 0
-          ? ventures.map(v => ({ label: v.name, tab: "ventures" }))
+          ? ventures.map(v => ({ label: v.name, tab: "ventures", url: v.url }))
           : [
-              { label: "MetaGen Project", tab: "ventures" },
-              { label: "Ugbekun Platform", tab: "ventures" },
-              { label: "Oghowa Accelerator", tab: "ventures" },
-              { label: "MyEduRide Logistics", tab: "ventures" },
-              { label: "Cyona Medicare", tab: "ventures" }
+              { label: "MetaGen Project", tab: "ventures", url: "https://www.metagenproject.metaspaceconsult.com/" },
+              { label: "Ugbekun", tab: "ventures", url: "https://www.ugbekun.com" },
+              { label: "Oghowa Accelerator", tab: "ventures", url: "https://www.metaspaceconsult.com/oghowa" },
+              { label: "EduRide", tab: "ventures", url: "https://www.myeduride.com" },
+              { label: "Cyona Medicare", tab: "ventures", url: "https://www.cyonamedicare.com/" }
             ]);
 
   const Logo = () => (
@@ -137,16 +151,31 @@ export default function Footer({
               Our Ventures
             </h4>
             <ul className="space-y-3 text-xs">
-              {venturesLinksToRender.map((link, idx) => (
-                <li key={idx}>
-                  <button
-                    onClick={() => setCurrentTab(link.tab as TabType)}
-                    className="text-gray-400 hover:text-white transition-all duration-200 transform hover:translate-x-1.5 text-left focus:outline-none inline-block font-sans"
-                  >
-                    {link.label}
-                  </button>
-                </li>
-              ))}
+              {venturesLinksToRender.map((link, idx) => {
+                const targetUrl = link.url;
+                return (
+                  <li key={idx}>
+                    {targetUrl ? (
+                      <a
+                        href={targetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-gray-400 hover:text-white transition-all duration-200 transform hover:translate-x-1.5 text-left focus:outline-none inline-flex items-center space-x-1 font-sans group"
+                      >
+                        <span>{link.label}</span>
+                        <ExternalLink size={10} className="opacity-60 group-hover:opacity-100 transition-opacity ml-1 shrink-0 text-brand-crimson" />
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => setCurrentTab(link.tab as TabType)}
+                        className="text-gray-400 hover:text-white transition-all duration-200 transform hover:translate-x-1.5 text-left focus:outline-none inline-block font-sans"
+                      >
+                        {link.label}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
 

@@ -7,7 +7,7 @@ import {
   CheckCircle2, AlertTriangle, CloudUpload, HardDrive, Rocket, MessageSquare
 } from "lucide-react";
 import { Consultation, ContactInquiry, Venture, ServiceOffer, ClientLogo } from "../types";
-import { CLIENT_LOGOS_DATA } from "../data";
+import { CLIENT_LOGOS_DATA, VENTURES_DATA } from "../data";
 import { 
   apiFetchSiteConfig, apiSaveSiteConfig, apiLoginAdmin, 
   apiFetchConsultations, apiFetchInquiries,
@@ -318,7 +318,23 @@ export default function AdminDashboard({ onConfigChange }: AdminDashboardProps =
         setWhatWeDoDesc(d.what_we_do_desc || "");
         setLogoUrl(d.logoUrl || "");
         setLagosBridgeUrl(d.lagosBridgeUrl || "");
-        setVentures(d.ventures || []);
+        
+        const incomingVentures = (d.ventures && Array.isArray(d.ventures) && d.ventures.length > 0)
+          ? d.ventures
+          : VENTURES_DATA;
+        const mergedVentures = VENTURES_DATA.map(defV => {
+          const found = incomingVentures.find((v: any) => v && (v.id === defV.id || v.name?.toLowerCase() === defV.name?.toLowerCase()));
+          return {
+            ...defV,
+            ...(found || {}),
+            url: (found && found.url && found.url.trim() !== "") ? found.url : defV.url
+          };
+        });
+        const customVentures = incomingVentures.filter((v: any) => 
+          v && !VENTURES_DATA.some(defV => defV.id === v.id || defV.name?.toLowerCase() === v.name?.toLowerCase())
+        );
+        setVentures([...mergedVentures, ...customVentures]);
+
         setServices(d.services || []);
         if (d.clientLogos && Array.isArray(d.clientLogos) && d.clientLogos.length > 0) {
           setClientLogos(d.clientLogos);
@@ -675,7 +691,15 @@ export default function AdminDashboard({ onConfigChange }: AdminDashboardProps =
   const handleSaveVenturesServicesToCloudDb = async (overrideVentures?: Venture[], overrideServices?: ServiceOffer[]) => {
     setTabIsSaving(prev => ({ ...prev, ventures_services: true }));
     try {
-      const vToSave = overrideVentures || ventures;
+      const rawVentures = overrideVentures || ventures;
+      const vToSave = rawVentures.map(v => {
+        const defV = VENTURES_DATA.find(d => d.id === v.id || d.name?.toLowerCase() === v.name?.toLowerCase());
+        return {
+          ...(defV || {}),
+          ...v,
+          url: v.url && v.url.trim() !== "" ? v.url : (defV?.url || "https://www.metaspaceconsult.com")
+        };
+      });
       const sToSave = overrideServices || services;
       const notice = await saveVenturesAndServicesToCloudDatabase(vToSave, sToSave, { username });
       await apiSaveSiteConfig({ ventures: vToSave, services: sToSave });

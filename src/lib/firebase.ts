@@ -212,17 +212,68 @@ export async function fetchSiteConfigFromFirestore(): Promise<any> {
     const configDocRef = doc(db, "site_config", "global");
     const fetchPromise = getDoc(configDocRef);
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("Firestore connection timeout")), 2500)
+      setTimeout(() => reject(new Error("Firestore connection timeout")), 6500)
     );
     const docSnap = await Promise.race([fetchPromise, timeoutPromise]) as any;
     if (docSnap && typeof docSnap.exists === "function" && docSnap.exists()) {
-      return docSnap.data();
+      const data = docSnap.data();
+      // If global doc does not contain ventures or has empty ventures, attempt reading ventures collection
+      if (!data.ventures || !Array.isArray(data.ventures) || data.ventures.length === 0) {
+        try {
+          const vCol = await getDocs(collection(db, "ventures"));
+          if (!vCol.empty) {
+            data.ventures = vCol.docs.map(d => ({ id: d.id, ...d.data() }));
+          }
+        } catch {
+          // non-blocking
+        }
+      }
+      return data;
     }
   } catch (err: any) {
     // Non-blocking: will seamlessly use local / server configuration
     console.info("Firestore site_config sync: operating with fallback state.", err?.message || err);
   }
   return null;
+}
+
+/**
+ * Real-time subscription to Site Configuration changes in Firestore
+ */
+export function subscribeToSiteConfig(callback: (data: any) => void): () => void {
+  try {
+    const configDocRef = doc(db, "site_config", "global");
+    return onSnapshot(configDocRef, (snap) => {
+      if (snap.exists()) {
+        callback(snap.data());
+      }
+    }, (err) => {
+      console.warn("Real-time site config subscription warning:", err);
+    });
+  } catch (err) {
+    console.warn("Could not attach real-time site config listener:", err);
+    return () => {};
+  }
+}
+
+/**
+ * Real-time subscription to Ventures collection in Firestore
+ */
+export function subscribeToVentures(callback: (ventures: any[]) => void): () => void {
+  try {
+    const vColRef = collection(db, "ventures");
+    return onSnapshot(vColRef, (snap) => {
+      if (!snap.empty) {
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        callback(list);
+      }
+    }, (err) => {
+      console.warn("Real-time ventures subscription warning:", err);
+    });
+  } catch (err) {
+    console.warn("Could not attach real-time ventures listener:", err);
+    return () => {};
+  }
 }
 
 /**

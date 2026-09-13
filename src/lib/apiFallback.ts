@@ -50,7 +50,7 @@ const DEFAULT_CONFIG = {
       fullDetails: "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.",
       iconName: "sparkles",
       color: "from-purple-600 to-indigo-800",
-      url: "https://www.metaspaceconsult.com/metagen",
+      url: "https://www.metagenproject.metaspaceconsult.com/",
       stats: [
         { label: "Won Awards", value: "3x" },
         { label: "Schools Reached", value: "100+" },
@@ -72,6 +72,7 @@ const DEFAULT_CONFIG = {
       fullDetails: "Ugbekun is designed to address the deep operational inefficiencies in the African educational sector. By integrating academic management, staff scheduling, automated invoice dispatching, and parent-teacher feedback portals, it saves schools up to 40% in administrative hours. Most importantly, its secure payment gateway allows cashless, instant fee payments with flexible installments, significantly reducing school fee default rates.",
       iconName: "school",
       color: "from-blue-600 to-indigo-700",
+      url: "https://www.ugbekun.com",
       stats: [
         { label: "Schools Enrolled", value: "45+" },
         { label: "Students Tracked", value: "12,000+" },
@@ -92,6 +93,7 @@ const DEFAULT_CONFIG = {
       fullDetails: "Oghowa Accelerator is Metaspace's ecosystem catalyst. Through structured 12-week cohorts, startups receive intense technical, financial, and legal masterclasses, paired with direct hands-on product design. We don't just advise; we co-build. Every cohort culminates in a Demo Day, exposing startups to over 50 regional and international venture capitalists, angel networks, and strategic corporate partners.",
       iconName: "rocket",
       color: "from-red-600 to-pink-700",
+      url: "https://www.metaspaceconsult.com/oghowa",
       stats: [
         { label: "Cohort Graduates", value: "24" },
         { label: "Mentors Active", value: "35+" },
@@ -112,6 +114,7 @@ const DEFAULT_CONFIG = {
       fullDetails: "EduRide tackles the severe logistics and transportation friction on expanding university campuses and tech hubs. By utilizing tracked, fuel-efficient light vehicles and an on-demand routing app, we cut commute times by 50% and keep campus logistics safe, cheap, and environment-friendly. The app features digital ticketing and offline ride authentication to fit low-connectivity environments.",
       iconName: "bus",
       color: "from-amber-600 to-orange-700",
+      url: "https://www.myeduride.com",
       stats: [
         { label: "Active Commuters", value: "5,500+" },
         { label: "Rides Completed", value: "82,000+" },
@@ -132,6 +135,7 @@ const DEFAULT_CONFIG = {
       fullDetails: "Cyona Medicare was founded to support Africa's aging population with clinical precision. Through emergency dial-in hotlines and smart tele-triage platforms, we match senior citizens with registered local healthcare practitioners. For households needing ongoing assistance, Cyona handles recurring physical doctor visits and maintains full, tamperproof digital health records.",
       iconName: "heart",
       color: "from-teal-600 to-emerald-700",
+      url: "https://www.cyonamedicare.com/",
       stats: [
         { label: "Registered Nurses", value: "120+" },
         { label: "Happy Families", value: "650+" },
@@ -284,11 +288,11 @@ function ensureConfigIntegrity(config: any): any {
   }
 
   const defaultUrls: Record<string, string> = {
-    metagen: "https://www.metaspaceconsult.com/metagen",
-    ugbekun: "https://www.metaspaceconsult.com/ugbekun",
+    metagen: "https://www.metagenproject.metaspaceconsult.com/",
+    ugbekun: "https://www.ugbekun.com",
     oghowa: "https://www.metaspaceconsult.com/oghowa",
     eduride: "https://www.myeduride.com",
-    cyona: "https://www.cynonamediccare.com"
+    cyona: "https://www.cyonamedicare.com/"
   };
 
   if (Array.isArray(merged.ventures)) {
@@ -299,7 +303,11 @@ function ensureConfigIntegrity(config: any): any {
       merged.ventures = merged.ventures.map(v => {
         if (!v) return v;
         if (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))) {
-          return { ...DEFAULT_CONFIG.ventures[0], ...v, url: v.url || DEFAULT_CONFIG.ventures[0].url };
+          return {
+            ...DEFAULT_CONFIG.ventures[0],
+            ...v,
+            url: v.url && v.url.trim() !== "" ? v.url : (DEFAULT_CONFIG.ventures[0].url || defaultUrls.metagen)
+          };
         }
         return v;
       });

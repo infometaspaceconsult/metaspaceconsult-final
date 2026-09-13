@@ -9,6 +9,7 @@ import {
 import { TabType, Venture, ServiceOffer, InsightPost, ClientLogo } from "./types";
 import { VENTURES_DATA, SERVICES_DATA, INSIGHTS_DATA, LAGOS_BRIDGE_IMAGE, TEAM_MEMBERS, CLIENT_LOGOS_DATA } from "./data";
 import { apiFetchSiteConfig, apiCreateInquiry } from "./lib/apiFallback";
+import { subscribeToSiteConfig, subscribeToVentures } from "./lib/firebase";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
 import GeminiAssistant from "./components/GeminiAssistant";
@@ -68,16 +69,20 @@ export default function App() {
     if (!d) return;
     if (d.ventures && Array.isArray(d.ventures)) {
       let loaded = d.ventures;
+      // Ensure all ventures retain full styling/metadata fallbacks while strictly prioritizing updated links and user edits
+      loaded = loaded.map((v: Venture) => {
+        if (!v) return v;
+        const defaultMatch = VENTURES_DATA.find(defV => defV.id === v.id || defV.name?.toLowerCase() === v.name?.toLowerCase());
+        return {
+          ...(defaultMatch || {}),
+          ...v,
+          url: v.url && v.url.trim() !== "" ? v.url : (defaultMatch?.url || "https://www.metaspaceconsult.com")
+        };
+      });
+      // If MetaGen was somehow missing entirely, prepend it
       const hasMetagen = loaded.some((v: Venture) => v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen'))));
       if (!hasMetagen) {
         loaded = [VENTURES_DATA[0], ...loaded];
-      } else {
-        loaded = loaded.map((v: Venture) => {
-          if (v && (v.id === 'metagen' || (v.name && v.name.toLowerCase().includes('metagen')))) {
-            return VENTURES_DATA[0];
-          }
-          return v;
-        });
       }
       setVentures(loaded);
     }
@@ -139,8 +144,24 @@ export default function App() {
       }
     };
     window.addEventListener("metaspace_config_updated", handleConfigUpdated);
+
+    // Subscribe to real-time updates from Firestore cloud database
+    const unsubSite = subscribeToSiteConfig((liveData) => {
+      if (liveData) {
+        applySiteConfig(liveData);
+      }
+    });
+
+    const unsubVentures = subscribeToVentures((liveVentures) => {
+      if (liveVentures && liveVentures.length > 0) {
+        applySiteConfig({ ventures: liveVentures });
+      }
+    });
+
     return () => {
       window.removeEventListener("metaspace_config_updated", handleConfigUpdated);
+      if (unsubSite) unsubSite();
+      if (unsubVentures) unsubVentures();
     };
   }, []);
 

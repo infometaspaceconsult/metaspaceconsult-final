@@ -9,7 +9,7 @@ export const VENTURES_DATA: Venture[] = [
     fullDetails: "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.\n\nOur Core Goals:\n• Enhance engagement & student achievement\n• Promote collaboration & communication across schools\n• Ensure equitable access to digital resources\n• Foster a thriving digital culture in educational ecosystems\n\nMetaGen offers customized digital solutions providing a curated selection of digital tools and ongoing support services to empower school administrators, educators, teachers, and students in leveraging technology effectively. Our approach prioritizes personalized support, seamless integration, and continuous improvement.\n\nMetaGen is committed to empowering schools with comprehensive digital human capital development solutions (training and retraining teachers, students, and administrators on digital transformative skills), ensuring that educators, students, and staff are equipped with the knowledge, skills, and mindset to thrive in a digital world.",
     iconName: "sparkles",
     color: "from-purple-600 to-indigo-800",
-    url: "https://www.metaspaceconsult.com/metagen",
+    url: "https://www.metagenproject.metaspaceconsult.com/",
     stats: [
       { label: "Won Awards", value: "3x" },
       { label: "Schools Reached", value: "100+" },
@@ -31,7 +31,7 @@ export const VENTURES_DATA: Venture[] = [
     fullDetails: "Ugbekun is designed to address the deep operational inefficiencies in the African educational sector. By integrating academic management, staff scheduling, automated invoice dispatching, and parent-teacher feedback portals, it saves schools up to 40% in administrative hours. Most importantly, its secure payment gateway allows cashless, instant fee payments with flexible installments, significantly reducing school fee default rates.",
     iconName: "school",
     color: "from-blue-600 to-indigo-700",
-    url: "https://www.metaspaceconsult.com/ugbekun",
+    url: "https://www.ugbekun.com",
     stats: [
       { label: "Schools Enrolled", value: "45+" },
       { label: "Students Tracked", value: "12,000+" },
@@ -94,7 +94,7 @@ export const VENTURES_DATA: Venture[] = [
     fullDetails: "Cyona Medicare redefines wellness and eldercare across African cities. Our platform connects certified nurses, caregivers, and doctors with families seeking dedicated care for their aging loved ones. By combining physical visits with continuous smart-monitoring devices, we help prevent emergency crises, track vital metrics, and deliver prescription refills right to the patient's doorstep.",
     iconName: "heart",
     color: "from-rose-600 to-red-700",
-    url: "https://www.cynonamediccare.com",
+    url: "https://www.cyonamedicare.com/",
     stats: [
       { label: "Registered Nurses", value: "120+" },
       { label: "Happy Families", value: "650+" },

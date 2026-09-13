@@ -27,7 +27,7 @@ import {
 
 dotenv.config();
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 // Lazy initialize Gemini SDK with telemetry header to prevent top-level crash when GEMINI_API_KEY is not set in Vercel
 let aiInstance: GoogleGenAI | null = null;
@@ -984,16 +984,9 @@ Tone and Style:
         });
       }
 
-      const isPipe = typeof PORT === "string" && isNaN(Number(PORT));
-      if (isPipe) {
-        app.listen(PORT, () => {
-          console.log(`Server running on Unix socket: ${PORT}`);
-        });
-      } else {
-        app.listen(Number(PORT), "0.0.0.0", () => {
-          console.log(`Server running on http://0.0.0.0:${PORT}`);
-        });
-      }
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on http://0.0.0.0:${PORT}`);
+      });
     }
   }
 

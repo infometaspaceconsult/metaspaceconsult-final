@@ -47,8 +47,8 @@ export interface SiteConfig {
   footer_twitter?: string;
   footer_facebook?: string;
   footer_instagram?: string;
-  footer_quick_links?: { label: string; tab: string }[];
-  footer_ventures_links?: { label: string; tab: string }[];
+  footer_quick_links?: { label: string; tab: string; url?: string }[];
+  footer_ventures_links?: { label: string; tab: string; url?: string }[];
   home_hero_title_color?: string;
   home_hero_title_highlight_color?: string;
 }
@@ -90,11 +90,11 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
     { label: "Contact Us", tab: "contact" }
   ],
   footer_ventures_links: [
-    { label: "MetaGen Project", tab: "ventures" },
-    { label: "Ugbekun Platform", tab: "ventures" },
-    { label: "Oghowa Accelerator", tab: "ventures" },
-    { label: "MyEduRide Logistics", tab: "ventures" },
-    { label: "Cyona Medicare", tab: "ventures" }
+    { label: "MetaGen Project", tab: "ventures", url: "https://www.metagenproject.metaspaceconsult.com/" },
+    { label: "Ugbekun", tab: "ventures", url: "https://www.ugbekun.com" },
+    { label: "Oghowa Accelerator", tab: "ventures", url: "https://www.metaspaceconsult.com/oghowa" },
+    { label: "EduRide", tab: "ventures", url: "https://www.myeduride.com" },
+    { label: "Cyona Medicare", tab: "ventures", url: "https://www.cyonamedicare.com/" }
   ],
   home_hero_title: "Transforming Africa.",
   home_hero_subtitle: "Building Systems. Empowering People.",
@@ -114,7 +114,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Welcome to the MetaGen Project, an initiative of Metaspace Consult, a leading digital transformation company in Nigeria. At MetaGen Project, we promote a digital transformative experience designed to empower the digital leaders of tomorrow in this digital age.\n\nWith a focus on empowering educators and students, we provide a comprehensive suite of digital tools and ongoing support services designed to enhance teaching and learning experiences, foster collaboration, and drive student achievement.\n\nOur Core Goals:\n• Enhance engagement & student achievement\n• Promote collaboration & communication across schools\n• Ensure equitable access to digital resources\n• Foster a thriving digital culture in educational ecosystems\n\nMetaGen offers customized digital solutions providing a curated selection of digital tools and ongoing support services to empower school administrators, educators, teachers, and students in leveraging technology effectively. Our approach prioritizes personalized support, seamless integration, and continuous improvement.\n\nMetaGen is committed to empowering schools with comprehensive digital human capital development solutions (training and retraining teachers, students, and administrators on digital transformative skills), ensuring that educators, students, and staff are equipped with the knowledge, skills, and mindset to thrive in a digital world.",
       iconName: "sparkles",
       color: "from-purple-600 to-indigo-800",
-      url: "https://www.metaspaceconsult.com/metagen",
+      url: "https://www.metagenproject.metaspaceconsult.com/",
       stats: [
         { label: "Won Awards", value: "3x" },
         { label: "Schools Reached", value: "100+" },
@@ -136,7 +136,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Ugbekun is designed to address the deep operational inefficiencies in the African educational sector. By integrating academic management, staff scheduling, automated invoice dispatching, and parent-teacher feedback portals, it saves schools up to 40% in administrative hours. Most importantly, its secure payment gateway allows cashless, instant fee payments with flexible installments, significantly reducing school fee default rates.",
       iconName: "school",
       color: "from-blue-600 to-indigo-700",
-      url: "https://www.metaspaceconsult.com/ugbekun",
+      url: "https://www.ugbekun.com",
       stats: [
         { label: "Schools Enrolled", value: "45+" },
         { label: "Students Tracked", value: "12,000+" },
@@ -199,7 +199,7 @@ const DEFAULT_SITE_CONFIG: SiteConfig = {
       fullDetails: "Cyona Medicare redefines wellness and eldercare across African cities. Our platform connects certified nurses, caregivers, and doctors with families seeking dedicated care for their aging loved ones. By combining physical visits with continuous smart-monitoring devices, we help prevent emergency crises, track vital metrics, and deliver prescription refills right to the patient's doorstep.",
       iconName: "heart",
       color: "from-rose-600 to-red-700",
-      url: "https://www.cynonamediccare.com",
+      url: "https://www.cyonamedicare.com/",
       stats: [
         { label: "Registered Nurses", value: "120+" },
         { label: "Happy Families", value: "650+" },
@@ -495,11 +495,11 @@ function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
   const merged = { ...DEFAULT_SITE_CONFIG, ...config };
   
   const defaultUrls: Record<string, string> = {
-    metagen: "https://www.metaspaceconsult.com/metagen",
-    ugbekun: "https://www.metaspaceconsult.com/ugbekun",
+    metagen: "https://www.metagenproject.metaspaceconsult.com/",
+    ugbekun: "https://www.ugbekun.com",
     oghowa: "https://www.metaspaceconsult.com/oghowa",
     eduride: "https://www.myeduride.com",
-    cyona: "https://www.cynonamediccare.com"
+    cyona: "https://www.cyonamedicare.com/"
   };
 
   const defaultVentures = DEFAULT_SITE_CONFIG.ventures || [];
@@ -531,7 +531,20 @@ function ensureMetagenInConfig(config: SiteConfig): SiteConfig {
 
   if (Array.isArray(merged.footer_ventures_links)) {
     const defaultLinks = DEFAULT_SITE_CONFIG.footer_ventures_links || [];
-    const existingLabels = new Set(merged.footer_ventures_links.map(l => l?.label));
+    // Normalize existing links
+    merged.footer_ventures_links = merged.footer_ventures_links.map((l: any) => {
+      let label = l?.label || "";
+      if (label === "Ugbekun Platform") label = "Ugbekun";
+      if (label === "MyEduRide Logistics" || label === "MyEduRide") label = "EduRide";
+      const defMatch = defaultLinks.find(d => d.label.toLowerCase() === label.toLowerCase());
+      return {
+        ...l,
+        label,
+        url: l?.url || defMatch?.url
+      };
+    });
+
+    const existingLabels = new Set(merged.footer_ventures_links.map((l: any) => l?.label));
     for (const defL of defaultLinks) {
       if (defL && defL.label && !existingLabels.has(defL.label)) {
         merged.footer_ventures_links.push(defL);
@@ -548,46 +561,41 @@ let inMemoryDB: InFileDB | null = null;
 
 // Read database file
 function readLocalFile(): InFileDB {
-  if (inMemoryDB) {
-    return inMemoryDB;
-  }
-
   let siteConfig = DEFAULT_SITE_CONFIG;
   let consultations: Consultation[] = [];
   let contactInquiries: ContactInquiry[] = [];
 
-  const tmpSitePath = path.join("/tmp", "data", "site_config.json");
-  const tmpConsultPath = path.join("/tmp", "data", "consultations.json");
-  const tmpInqPath = path.join("/tmp", "data", "inquiries.json");
-
   try {
-    if (fs.existsSync(tmpSitePath)) {
-      siteConfig = JSON.parse(fs.readFileSync(tmpSitePath, "utf8"));
-    } else if (fs.existsSync(SITE_CONFIG_PATH)) {
+    if (fs.existsSync(SITE_CONFIG_PATH)) {
       siteConfig = JSON.parse(fs.readFileSync(SITE_CONFIG_PATH, "utf8"));
+    } else if (inMemoryDB?.siteConfig) {
+      siteConfig = inMemoryDB.siteConfig;
     }
   } catch (err) {
     console.error("Error reading SITE_CONFIG_PATH file", err);
+    if (inMemoryDB?.siteConfig) siteConfig = inMemoryDB.siteConfig;
   }
 
   try {
-    if (fs.existsSync(tmpConsultPath)) {
-      consultations = JSON.parse(fs.readFileSync(tmpConsultPath, "utf8"));
-    } else if (fs.existsSync(CONSULTATIONS_PATH)) {
+    if (fs.existsSync(CONSULTATIONS_PATH)) {
       consultations = JSON.parse(fs.readFileSync(CONSULTATIONS_PATH, "utf8"));
+    } else if (inMemoryDB?.consultations) {
+      consultations = inMemoryDB.consultations;
     }
   } catch (err) {
     console.error("Error reading CONSULTATIONS_PATH file", err);
+    if (inMemoryDB?.consultations) consultations = inMemoryDB.consultations;
   }
 
   try {
-    if (fs.existsSync(tmpInqPath)) {
-      contactInquiries = JSON.parse(fs.readFileSync(tmpInqPath, "utf8"));
-    } else if (fs.existsSync(INQUIRIES_PATH)) {
+    if (fs.existsSync(INQUIRIES_PATH)) {
       contactInquiries = JSON.parse(fs.readFileSync(INQUIRIES_PATH, "utf8"));
+    } else if (inMemoryDB?.contactInquiries) {
+      contactInquiries = inMemoryDB.contactInquiries;
     }
   } catch (err) {
     console.error("Error reading INQUIRIES_PATH file", err);
+    if (inMemoryDB?.contactInquiries) contactInquiries = inMemoryDB.contactInquiries;
   }
 
   inMemoryDB = {
