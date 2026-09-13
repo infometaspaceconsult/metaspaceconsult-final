@@ -1,5 +1,0 @@
-# Protect sensitive JSON database store files from direct public web access
-<Files "*.json">
-    Order Deny,Allow
-    Deny from all
-</Files>
