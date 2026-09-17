@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "OghowaSiteConfig": {
+      "title": "OghowaSiteConfig",
+      "description": "Isolated site configuration entity for live portal on Metaspace Consult Firestore database.",
+      "type": "object",
+      "properties": {
+        "parent_organization": {
+          "type": "string",
+          "description": "Parent entity tagging (Metaspace Consult)"
+        },
+        "initiative": {
+          "type": "string",
+          "description": "Initiative name (Oghowa Accelerator & Business Week)"
+        },
+        "app_support": {
+          "type": "string",
+          "description": "Support contact email"
+        },
+        "brand": {
+          "type": "object",
+          "description": "Portal branding configuration"
+        },
+        "global": {
+          "type": "object",
+          "description": "Global dateline and venue metadata"
+        },
+        "updated_at": {
+          "type": "string",
+          "description": "ISO timestamp of last non-destructive merge"
+        }
+      },
+      "required": ["parent_organization", "initiative", "app_support"]
+    },
+    "OghowaRegistration": {
+      "title": "OghowaRegistration",
+      "description": "Accreditation and attendance record in oghowa_registrations namespace.",
+      "type": "object",
+      "properties": {
+        "parent_organization": {
+          "type": "string"
+        },
+        "initiative": {
+          "type": "string"
+        },
+        "app_support": {
+          "type": "string"
+        },
+        "fullName": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "phone": {
+          "type": "string"
+        },
+        "organization": {
+          "type": "string"
+        },
+        "track": {
+          "type": "string"
+        },
+        "accreditationCode": {
+          "type": "string"
+        },
+        "accreditationStatus": {
+          "type": "string",
+          "enum": ["Pending", "Approved", "Declined"]
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": ["parent_organization", "initiative", "fullName", "email"]
+    },
+    "OghowaDealRoomDossier": {
+      "title": "OghowaDealRoomDossier",
+      "description": "Deal room investment dossier in oghowa_dealroom_dossiers namespace.",
+      "type": "object",
+      "properties": {
+        "parent_organization": {
+          "type": "string"
+        },
+        "initiative": {
+          "type": "string"
+        },
+        "app_support": {
+          "type": "string"
+        },
+        "companyName": {
+          "type": "string"
+        },
+        "sector": {
+          "type": "string"
+        },
+        "raisingAmount": {
+          "type": "string"
+        },
+        "dealStatus": {
+          "type": "string"
+        }
+      },
+      "required": ["parent_organization", "initiative", "companyName"]
+    }
+  },
+  "firestore": {
+    "/oghowa_site_config/{docId}": {
+      "schema": "OghowaSiteConfig",
+      "description": "Isolated single-document site config for Oghowa (live_portal). Non-destructive atomic merge only."
+    },
+    "/oghowa_events/{eventId}": {
+      "schema": "OghowaSiteConfig",
+      "description": "Isolated summit and session scheduling."
+    },
+    "/oghowa_registrations/{registrationId}": {
+      "schema": "OghowaRegistration",
+      "description": "Isolated delegate accreditations; strictly separated from other Metaspace Consult collections."
+    },
+    "/oghowa_dealroom_dossiers/{dossierId}": {
+      "schema": "OghowaDealRoomDossier",
+      "description": "Isolated deal room files and syndicate documents."
+    }
+  }
+}

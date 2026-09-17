@@ -1,0 +1,34 @@
+[
+  {
+    "id": "dossier-001",
+    "initiative": "Oghowa Accelerator & Business Week",
+    "companyName": "Edo Agro-Industrial Processing Corridor",
+    "sector": "AgriTech & Cold-Chain Logistics",
+    "raisingAmount": "$3,500,000",
+    "valuation": "$14,000,000",
+    "leadPartner": "Midwestern Capital Partners",
+    "executiveContact": "Osagie Alenkhe",
+    "dealStatus": "Vetting Active",
+    "targetCloseDate": "2026-11-20",
+    "confidentialNotes": "Sovereign land concession secured; export tax rebate pre-approved by Edo State Ministry of Finance.",
+    "createdAt": "2026-09-10T12:00:00Z",
+    "parent_organization": "Metaspace Consult",
+    "app_support": "usiobaifovictory245@gmail.com"
+  },
+  {
+    "id": "dossier-002",
+    "initiative": "Oghowa Accelerator & Business Week",
+    "companyName": "Benin Corridor Freight & Warehousing",
+    "sector": "Supply Chain Infrastructure",
+    "raisingAmount": "₦850,000,000",
+    "valuation": "₦3,400,000,000",
+    "leadPartner": "Afrilogistics Tech NG",
+    "executiveContact": "Amina Bello",
+    "dealStatus": "Term Sheet Stage",
+    "targetCloseDate": "2026-11-19",
+    "confidentialNotes": "Warehouse capacity expansion across Benin Bypass corridor.",
+    "createdAt": "2026-09-13T10:30:00Z",
+    "parent_organization": "Metaspace Consult",
+    "app_support": "usiobaifovictory245@gmail.com"
+  }
+]
